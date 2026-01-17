@@ -11,23 +11,31 @@
       <div class="button-wrapper">
         <button id="countdown-button" class="countdown-button" type="button">60</button>
       </div>
+      <p id="client-status" class="client-status" aria-live="polite">Checking cookie status…</p>
     </main>
 
     <div id="cookie-modal" class="cookie-modal" aria-hidden="true">
       <div class="cookie-card" role="dialog" aria-live="assertive">
         <h1>Cookie Permission Needed</h1>
         <p>
-          This site needs cookies to assign your server ID and sync the global timer.
-          If cookies are blocked, the button cannot be used.
+          This site needs cookies to work. If cookies are blocked, the site cannot be used.
         </p>
         <ul>
-          <li>Cookies disabled in browser settings.</li>
-          <li>Private browsing restrictions.</li>
-          <li>Extensions blocking storage.</li>
+          <li>Cookies are turned off in browser settings.</li>
+          <li>Private/Incognito mode is enabled.</li>
+          <li>“Block all cookies” is turned on.</li>
+          <li>A privacy/ads extension is blocking storage.</li>
+          <li>The browser is set to clear cookies on exit.</li>
         </ul>
+        <p class="cookie-note">
+          Some mobile browsers show “0 bytes” for HttpOnly cookies. The best way to confirm is
+          the status below.
+        </p>
         <div class="cookie-actions">
           <button id="allow-cookies" type="button">Allow Cookies</button>
+          <button id="recheck-cookies" type="button" class="secondary">Recheck Status</button>
         </div>
+        <p id="cookie-status" class="cookie-status" hidden></p>
         <p id="cookie-error" class="cookie-error" hidden>
           Cookies are still blocked. Please enable them in your browser settings.
         </p>
