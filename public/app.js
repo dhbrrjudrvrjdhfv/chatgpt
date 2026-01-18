@@ -1,10 +1,16 @@
 const countdownButton = document.getElementById("countdown-button");
 const cookieModal = document.getElementById("cookie-modal");
 const allowCookiesButton = document.getElementById("allow-cookies");
+const cookieStatus = document.getElementById("cookie-status");
 const cookieError = document.getElementById("cookie-error");
 const cookieLimit = document.getElementById("cookie-limit");
 
 let hasConsent = false;
+
+const setCookieStatus = (message, { show = true } = {}) => {
+  cookieStatus.textContent = message;
+  cookieStatus.hidden = !show;
+};
 
 const showCookieModal = () => {
   cookieModal.classList.add("is-visible");
@@ -16,35 +22,54 @@ const hideCookieModal = () => {
   cookieModal.setAttribute("aria-hidden", "true");
   cookieError.hidden = true;
   cookieLimit.hidden = true;
+  cookieStatus.hidden = true;
 };
 
 const checkConsent = async () => {
-  const response = await fetch("/api/me");
-  const data = await response.json();
-  if (!data.hasId) {
+  try {
+    const response = await fetch("/api/me");
+    if (!response.ok) {
+      throw new Error("status");
+    }
+    const data = await response.json();
+    if (!data.hasId) {
+      showCookieModal();
+      setCookieStatus("No cookie ID detected yet. Tap “Allow Cookies” to create one.");
+      return false;
+    }
+    hasConsent = true;
+    hideCookieModal();
+    return true;
+  } catch (error) {
     showCookieModal();
+    setCookieStatus("Unable to reach the server. Please try again.");
     return false;
   }
-  hasConsent = true;
-  hideCookieModal();
-  return true;
 };
 
 const requestConsent = async () => {
   cookieError.hidden = true;
   cookieLimit.hidden = true;
-  const response = await fetch("/api/consent", { method: "POST" });
-  if (response.status === 403) {
-    cookieLimit.hidden = false;
-    return;
-  }
-  if (!response.ok) {
+  setCookieStatus("Requesting cookie consent…");
+  try {
+    const response = await fetch("/api/consent", { method: "POST" });
+    if (response.status === 403) {
+      cookieLimit.hidden = false;
+      setCookieStatus("The 1,000,000 user limit has been reached.");
+      return;
+    }
+    if (!response.ok) {
+      cookieError.hidden = false;
+      setCookieStatus("Cookie request failed. Please try again.");
+      return;
+    }
+    await checkConsent();
+    if (!hasConsent) {
+      cookieError.hidden = false;
+    }
+  } catch (error) {
     cookieError.hidden = false;
-    return;
-  }
-  await checkConsent();
-  if (!hasConsent) {
-    cookieError.hidden = false;
+    setCookieStatus("Network error. Please try again.");
   }
 };
 
