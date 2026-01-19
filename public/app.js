@@ -1,4 +1,5 @@
 const countdownButton = document.getElementById("countdown-button");
+const countdownValue = document.getElementById("countdown-value");
 const cookieModal = document.getElementById("cookie-modal");
 const allowCookiesButton = document.getElementById("allow-cookies");
 const cookieStatus = document.getElementById("cookie-status");
@@ -75,11 +76,35 @@ const requestConsent = async () => {
 
 allowCookiesButton.addEventListener("click", requestConsent);
 
+const updateShakeState = (remaining) => {
+  countdownButton.classList.remove("shake-subtle", "shake-medium", "shake-heavy");
+  if (remaining <= 0 || remaining >= 31) {
+    return;
+  }
+  if (remaining <= 5) {
+    countdownButton.classList.add("shake-heavy");
+  } else if (remaining <= 15) {
+    countdownButton.classList.add("shake-medium");
+  } else if (remaining <= 30) {
+    countdownButton.classList.add("shake-subtle");
+  }
+};
+
+const updateShellState = (remaining) => {
+  const clamped = Math.max(0, Math.min(60, remaining));
+  const progress = clamped / 60;
+  const hue = Math.round(120 * progress);
+  countdownButton.style.setProperty("--shell-progress", progress.toString());
+  countdownButton.style.setProperty("--shell-hue", hue.toString());
+};
+
 const connectEvents = () => {
   const events = new EventSource("/events");
   events.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    countdownButton.textContent = data.remaining;
+    countdownValue.textContent = data.remaining;
+    updateShellState(data.remaining);
+    updateShakeState(data.remaining);
   };
 };
 
