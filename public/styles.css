@@ -27,22 +27,122 @@ body {
 }
 
 .countdown-button {
-  width: 220px;
-  height: 220px;
+  --core-size: 220px;
+  --shell-size: 22px;
+  --shell-progress: 1;
+  --shell-hue: 120;
+  width: calc(var(--core-size) + (var(--shell-size) * 2));
+  height: calc(var(--core-size) + (var(--shell-size) * 2));
   border-radius: 50%;
-  background: #000;
+  background: conic-gradient(
+    from -90deg,
+    hsl(var(--shell-hue) 100% 50%) 0turn,
+    hsl(var(--shell-hue) 100% 50%) calc(var(--shell-progress) * 1turn),
+    #000 calc(var(--shell-progress) * 1turn),
+    #000 1turn
+  );
   border: none;
-  color: #fff;
-  font-size: 64px;
-  font-weight: 600;
+  padding: 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  caret-color: transparent;
+  outline: none;
 }
 
-.countdown-button:active {
-  transform: scale(0.98);
+.countdown-button:focus {
+  outline: none;
+}
+
+.countdown-button:focus-visible {
+  outline: none;
+}
+
+.countdown-core {
+  width: var(--core-size);
+  height: var(--core-size);
+  border-radius: 50%;
+  background: #fff;
+  color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.shake-subtle {
+  animation: shake-subtle 0.18s infinite;
+}
+
+.shake-medium {
+  animation: shake-medium 0.14s infinite;
+}
+
+.shake-heavy {
+  animation: shake-heavy 0.1s infinite;
+}
+
+@keyframes shake-subtle {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-0.5px, 0.5px);
+  }
+  40% {
+    transform: translate(0.6px, -0.4px);
+  }
+  60% {
+    transform: translate(-0.4px, -0.5px);
+  }
+  80% {
+    transform: translate(0.5px, 0.4px);
+  }
+}
+
+@keyframes shake-medium {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-1px, 1px);
+  }
+  40% {
+    transform: translate(1.2px, -0.8px);
+  }
+  60% {
+    transform: translate(-1px, -1px);
+  }
+  80% {
+    transform: translate(0.8px, 1px);
+  }
+}
+
+@keyframes shake-heavy {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-2px, 2px);
+  }
+  40% {
+    transform: translate(2.5px, -2px);
+  }
+  60% {
+    transform: translate(-2.5px, -2px);
+  }
+  80% {
+    transform: translate(2px, 2.5px);
+  }
 }
 
 .cookie-modal {
@@ -80,6 +180,9 @@ body {
 
 .cookie-actions {
   margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .cookie-actions button {
@@ -91,9 +194,21 @@ body {
   cursor: pointer;
 }
 
+.cookie-actions .secondary {
+  background: transparent;
+  color: #000;
+  border: 1px solid #000;
+}
+
 .cookie-error {
   margin-top: 12px;
   color: #b00020;
+}
+
+.cookie-status,
+.cookie-note {
+  margin-top: 12px;
+  color: #444;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -104,5 +219,15 @@ body {
   .cookie-card {
     background: #1a1a1a;
     color: #fff;
+  }
+
+  .cookie-actions .secondary {
+    color: #fff;
+    border-color: #fff;
+  }
+
+  .cookie-status,
+  .cookie-note {
+    color: #d0d0d0;
   }
 }
