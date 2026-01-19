@@ -31,6 +31,7 @@ body {
   --shell-size: 22px;
   --shell-progress: 1;
   --shell-angle: 0;
+  --shell-offset: 0.25;
   --shell-hue: 120;
   width: calc(var(--core-size) + (var(--shell-size) * 2));
   height: calc(var(--core-size) + (var(--shell-size) * 2));
@@ -38,8 +39,9 @@ body {
   background: conic-gradient(
     from -90deg,
     #000 0turn,
-    #000 calc(var(--shell-angle) * 1turn),
-    hsl(var(--shell-hue) 100% 50%) calc(var(--shell-angle) * 1turn),
+    #000 calc((var(--shell-angle) + var(--shell-offset)) * 1turn),
+    hsl(var(--shell-hue) 100% 50%)
+      calc((var(--shell-angle) + var(--shell-offset)) * 1turn),
     hsl(var(--shell-hue) 100% 50%) 1turn
   );
   border: none;
