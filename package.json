@@ -1,0 +1,16 @@
+{
+  "name": "cookie-timer-site",
+  "version": "1.0.0",
+  "description": "Global countdown button with cookie-based IDs",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.2.0",
+    "uuid": "^10.0.0"
+  }
+}

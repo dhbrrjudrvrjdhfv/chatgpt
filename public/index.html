@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Global Countdown Button</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <div class="button-wrapper">
+        <button id="countdown-button" class="countdown-button" type="button">
+          <span class="countdown-core">
+            <span id="countdown-value">60</span>
+          </span>
+        </button>
+      </div>
+    </main>
+
+    <div id="cookie-modal" class="cookie-modal" aria-hidden="true">
+      <div class="cookie-card" role="dialog" aria-live="assertive">
+        <h1>Cookie Permission Needed</h1>
+        <p>
+          This site needs cookies to work. If cookies are blocked, the site cannot be used.
+        </p>
+        <p>Common reasons cookies might not work:</p>
+        <ul>
+          <li>Cookies are turned off in browser settings.</li>
+          <li>Private/Incognito mode is enabled.</li>
+          <li>“Block all cookies” is turned on.</li>
+          <li>A privacy/ads extension is blocking storage.</li>
+          <li>The browser is set to clear cookies on exit.</li>
+        </ul>
+        <div class="cookie-actions">
+          <button id="allow-cookies" type="button">Allow Cookies</button>
+        </div>
+        <p id="cookie-status" class="cookie-status" hidden></p>
+        <p id="cookie-error" class="cookie-error" hidden>
+          Cookies are still blocked. Please enable them in your browser settings.
+        </p>
+        <p id="cookie-limit" class="cookie-error" hidden>
+          The site has reached the 1,000,000 user limit.
+        </p>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
