@@ -1,5 +1,6 @@
 const countdownButton = document.getElementById("countdown-button");
 const countdownValue = document.getElementById("countdown-value");
+const ringForeground = document.querySelector(".countdown-ring-fg");
 const cookieModal = document.getElementById("cookie-modal");
 const allowCookiesButton = document.getElementById("allow-cookies");
 const cookieStatus = document.getElementById("cookie-status");
@@ -11,6 +12,14 @@ let lastServerRemaining = 60;
 let lastServerTime = 0;
 let lastServerEndsAt = 0;
 let animationFrame = null;
+let ringCircumference = 0;
+
+if (ringForeground) {
+  const radius = ringForeground.r.baseVal.value;
+  ringCircumference = 2 * Math.PI * radius;
+  ringForeground.style.strokeDasharray = `${ringCircumference} ${ringCircumference}`;
+  ringForeground.style.strokeDashoffset = "0";
+}
 
 const setCookieStatus = (message, { show = true } = {}) => {
   cookieStatus.textContent = message;
@@ -95,11 +104,14 @@ const updateShakeState = (remaining) => {
 };
 
 const updateShellState = (remaining) => {
+  if (!ringForeground || !ringCircumference) {
+    return;
+  }
   const clamped = Math.max(0, Math.min(60, remaining));
   const progress = clamped / 60;
-  const black = 1 - progress;
   const hue = Math.round(120 * progress);
-  countdownButton.style.setProperty("--shell-black", black.toString());
+  const dash = ringCircumference * progress;
+  ringForeground.style.strokeDasharray = `${dash} ${ringCircumference}`;
   countdownButton.style.setProperty("--shell-hue", hue.toString());
 };
 
