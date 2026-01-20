@@ -13,6 +13,7 @@ let lastServerTime = 0;
 let lastServerEndsAt = 0;
 let animationFrame = null;
 let ringCircumference = 0;
+const ringHoldSeconds = 1;
 
 if (ringForeground) {
   const radius = ringForeground.r.baseVal.value;
@@ -108,7 +109,8 @@ const updateShellState = (remaining) => {
     return;
   }
   const clamped = Math.max(0, Math.min(60, remaining));
-  const progress = clamped / 60;
+  const ringRemaining = Math.max(0, clamped - ringHoldSeconds);
+  const progress = Math.min(1, ringRemaining / (60 - ringHoldSeconds));
   const hue = Math.round(120 * progress);
   const dash = ringCircumference * progress;
   ringForeground.style.strokeDasharray = `${dash} ${ringCircumference}`;
