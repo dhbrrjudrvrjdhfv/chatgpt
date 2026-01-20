@@ -97,8 +97,9 @@ const updateShakeState = (remaining) => {
 const updateShellState = (remaining) => {
   const clamped = Math.max(0, Math.min(60, remaining));
   const progress = clamped / 60;
+  const black = 1 - progress;
   const hue = Math.round(120 * progress);
-  countdownButton.style.setProperty("--shell-progress", progress.toString());
+  countdownButton.style.setProperty("--shell-black", black.toString());
   countdownButton.style.setProperty("--shell-hue", hue.toString());
 };
 
