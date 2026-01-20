@@ -9,6 +9,7 @@ const cookieLimit = document.getElementById("cookie-limit");
 let hasConsent = false;
 let lastServerRemaining = 60;
 let lastServerTime = 0;
+let lastServerEndsAt = 0;
 let animationFrame = null;
 
 const setCookieStatus = (message, { show = true } = {}) => {
@@ -96,10 +97,8 @@ const updateShakeState = (remaining) => {
 const updateShellState = (remaining) => {
   const clamped = Math.max(0, Math.min(60, remaining));
   const progress = clamped / 60;
-  const angle = 1 - progress;
   const hue = Math.round(120 * progress);
   countdownButton.style.setProperty("--shell-progress", progress.toString());
-  countdownButton.style.setProperty("--shell-angle", angle.toString());
   countdownButton.style.setProperty("--shell-hue", hue.toString());
 };
 
@@ -108,8 +107,10 @@ const renderFrame = () => {
     animationFrame = requestAnimationFrame(renderFrame);
     return;
   }
-  const elapsedSeconds = (performance.now() - lastServerTime) / 1000;
-  const remaining = Math.max(0, lastServerRemaining - elapsedSeconds);
+  const now = Date.now();
+  const remaining = lastServerEndsAt
+    ? Math.max(0, (lastServerEndsAt - now) / 1000)
+    : Math.max(0, lastServerRemaining - (performance.now() - lastServerTime) / 1000);
   const displayValue = Math.ceil(remaining);
   countdownValue.textContent = displayValue;
   updateShellState(remaining);
@@ -122,6 +123,7 @@ const connectEvents = () => {
   events.onmessage = (event) => {
     const data = JSON.parse(event.data);
     lastServerRemaining = data.remaining;
+    lastServerEndsAt = data.endsAt ?? 0;
     lastServerTime = performance.now();
     if (!animationFrame) {
       animationFrame = requestAnimationFrame(renderFrame);
