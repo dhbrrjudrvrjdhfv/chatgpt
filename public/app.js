@@ -125,6 +125,9 @@ const updateShellState = (remaining) => {
 };
 
 const getBoostedDisplayValue = (remaining) => {
+  if (remaining <= 0) {
+    return 0;
+  }
   if (clickBoostEndsAt && performance.now() < clickBoostEndsAt) {
     return countdownSeconds;
   }
@@ -142,6 +145,7 @@ const renderFrame = () => {
     : Math.max(0, lastServerRemaining - (performance.now() - lastServerTime) / 1000);
   const displayValue = getBoostedDisplayValue(remaining);
   countdownValue.textContent = displayValue;
+  countdownButton.disabled = remaining <= 0;
   updateShellState(remaining);
   updateShakeState(displayValue);
   animationFrame = requestAnimationFrame(renderFrame);
@@ -163,6 +167,9 @@ const connectEvents = () => {
 countdownButton.addEventListener("click", async () => {
   if (!hasConsent) {
     showCookieModal();
+    return;
+  }
+  if (countdownButton.disabled) {
     return;
   }
   clickBoostEndsAt = performance.now() + clickBoostDuration;
