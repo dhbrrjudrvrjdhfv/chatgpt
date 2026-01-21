@@ -83,7 +83,7 @@ body:not(.has-consent) .page {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  transform: rotate(-90deg);
+  transform: rotate(-90deg) scaleX(-1);
 }
 
 .countdown-ring-bg {
