@@ -27,12 +27,18 @@ const setCookieStatus = (message, { show = true } = {}) => {
   cookieStatus.hidden = !show;
 };
 
+const setConsentState = (granted) => {
+  document.body.classList.toggle("has-consent", granted);
+};
+
 const showCookieModal = () => {
+  setConsentState(false);
   cookieModal.classList.add("is-visible");
   cookieModal.setAttribute("aria-hidden", "false");
 };
 
 const hideCookieModal = () => {
+  setConsentState(true);
   cookieModal.classList.remove("is-visible");
   cookieModal.setAttribute("aria-hidden", "true");
   cookieError.hidden = true;
