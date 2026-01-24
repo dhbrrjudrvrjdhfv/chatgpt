@@ -143,10 +143,16 @@ const renderFrame = () => {
   const remaining = lastServerEndsAt
     ? Math.max(0, (lastServerEndsAt - now) / 1000)
     : Math.max(0, lastServerRemaining - (performance.now() - lastServerTime) / 1000);
+
+  const boostedRemaining =
+    clickBoostEndsAt && performance.now() < clickBoostEndsAt
+      ? countdownSeconds
+      : remaining;
+
   const displayValue = getBoostedDisplayValue(remaining);
   countdownValue.textContent = displayValue;
   countdownButton.disabled = remaining <= 0;
-  updateShellState(remaining);
+  updateShellState(boostedRemaining);
   updateShakeState(displayValue);
   animationFrame = requestAnimationFrame(renderFrame);
 };
