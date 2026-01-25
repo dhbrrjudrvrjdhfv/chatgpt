@@ -141,4 +141,6 @@ const updateShellState = (remaining) => {
 
 const getBoostedDisplayValue = (remaining) => {
   if (remaining <= 0) return 0;
-  if (clickBoostEndsAt && performance.now() < clickBoostEndsAt) return
+  if (clickBoostEndsAt && performance.now() < clickBoostEndsAt) return remaining; // or Option B
+  return remaining;
+};
