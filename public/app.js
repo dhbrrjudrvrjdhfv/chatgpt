@@ -15,6 +15,7 @@ const cookieLimit = document.getElementById("cookie-limit");
 
 const navLinks = Array.from(document.querySelectorAll("[data-route]"));
 const views = Array.from(document.querySelectorAll(".view[data-view]"));
+const visitsCount = document.getElementById("visits-count");
 
 let hasConsent = false;
 
@@ -35,6 +36,7 @@ const clickBoostDuration = 1000;
 let clickBoostEndsAt = 0;
 
 let sse = null;
+let visitsInterval = null;
 
 /* ---------- Ring setup (guarded) ---------- */
 if (ringForeground && ringForeground.r && ringForeground.r.baseVal) {
@@ -91,6 +93,7 @@ const checkConsent = async () => {
     hideCookieModal();
     startSSE();
     startAnimation();
+    refreshVisitsCount();
     return true;
   } catch {
     hasConsent = false;
@@ -137,6 +140,26 @@ const requestConsent = async () => {
 if (allowCookiesButton) {
   allowCookiesButton.addEventListener("click", requestConsent);
 }
+
+/* ---------- Visits today ---------- */
+const setVisitsCount = (value) => {
+  if (!visitsCount) return;
+  visitsCount.textContent = value;
+};
+
+const refreshVisitsCount = async () => {
+  if (!visitsCount) return;
+  try {
+    const response = await fetch("/api/visits-today", { credentials: "same-origin" });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (typeof data.count === "number") {
+      setVisitsCount(String(data.count));
+    }
+  } catch {
+    // ignore
+  }
+};
 
 /* ---------- Apply server time WITHOUT 1Hz snapping ---------- */
 const applyServerRemaining = (remainingInt) => {
@@ -355,4 +378,8 @@ window.addEventListener("DOMContentLoaded", () => {
   showView(routeFromPath(location.pathname));
   startAnimation();
   checkConsent(); // starts SSE if consent exists
+  refreshVisitsCount();
+  if (!visitsInterval) {
+    visitsInterval = setInterval(refreshVisitsCount, 60_000);
+  }
 });
