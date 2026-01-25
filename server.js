@@ -153,16 +153,32 @@ const getVisitsTodayCount = async () => {
   return snapshot.size;
 };
 
-const broadcastCountdown = () => {
+const getNextHourRemainingSeconds = (timestampMs) => {
+  const now = new Date(timestampMs);
+  const nextHour = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    now.getUTCHours() + 1,
+    0,
+    0,
+    0
+  ));
+  return Math.max(0, Math.ceil((nextHour.getTime() - timestampMs) / 1000));
+};
+
+const broadcastCountdown = async () => {
   const remaining = getRemainingSeconds();
-  const payload = `data: ${JSON.stringify({ remaining })}\n\n`;
+  const timestamp = await getNistNow();
+  const nextPayoutRemaining = getNextHourRemainingSeconds(timestamp);
+  const payload = `data: ${JSON.stringify({ remaining, nextPayoutRemaining })}\n\n`;
   for (const res of sseClients) {
     res.write(payload);
   }
 };
 
 setInterval(() => {
-  broadcastCountdown();
+  void broadcastCountdown();
 }, 1000);
 
 const getClientId = async (token) => {
@@ -240,14 +256,18 @@ app.get("/api/visits-today", async (req, res) => {
   }
 });
 
-app.get("/events", (req, res) => {
+app.get("/events", async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
   sseClients.add(res);
-  const initial = { remaining: getRemainingSeconds() };
+  const timestamp = await getNistNow();
+  const initial = {
+    remaining: getRemainingSeconds(),
+    nextPayoutRemaining: getNextHourRemainingSeconds(timestamp)
+  };
   res.write(`data: ${JSON.stringify(initial)}\n\n`);
 
   req.on("close", () => {
