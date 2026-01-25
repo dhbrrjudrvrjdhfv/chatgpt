@@ -1,5 +1,7 @@
 // public/app.js
-// Smooth, timer-tied SVG ring movement (client-side interpolation between 1Hz server ticks)
+// Smooth continuous SVG ring flow (no 1Hz snapping).
+// Key idea: maintain a client-side continuous "endsAtMs" and IGNORE normal 1-second SSE ticks,
+// only resync on real resets (jump up) or large drift.
 
 const countdownButton = document.getElementById("countdown-button");
 const countdownValue = document.getElementById("countdown-value");
@@ -18,9 +20,13 @@ let hasConsent = false;
 
 const countdownSeconds = 60;
 
-// Server-provided countdown state (arrives ~1Hz via SSE or on click response)
-let lastServerRemaining = countdownSeconds; // integer seconds from server
-let lastServerTime = 0; // performance.now() when lastServerRemaining was received
+// ---------- Continuous timer model ----------
+let endsAtMs = 0; // performance.now() time when countdown should hit 0
+let lastServerRemainingInt = null;
+
+// Tuning: tolerate small network jitter/drift without visible snaps
+const DRIFT_TOLERANCE_MS = 300; // only hard-resync if drift is bigger than this
+const DRIFT_SMOOTHING = 0.05;   // small gradual correction factor
 
 let animationFrame = null;
 let ringCircumference = 0;
@@ -77,7 +83,7 @@ const checkConsent = async () => {
       showCookieModal();
       setCookieStatus('No cookie ID detected yet. Tap “Allow Cookies” to create one.');
       stopSSE();
-      startAnimation(); // keep UI animating (optional). Gate is CSS anyway.
+      startAnimation();
       return false;
     }
 
@@ -132,22 +138,46 @@ if (allowCookiesButton) {
   allowCookiesButton.addEventListener("click", requestConsent);
 }
 
-/* ---------- Smooth time model (core change) ---------- */
-// Returns a smooth, continuously decreasing remaining time in seconds (float).
+/* ---------- Apply server time WITHOUT 1Hz snapping ---------- */
+const applyServerRemaining = (remainingInt) => {
+  if (typeof remainingInt !== "number" || Number.isNaN(remainingInt)) return;
+
+  const now = performance.now();
+  const newEndsAt = now + remainingInt * 1000;
+
+  // First sync
+  if (!endsAtMs || lastServerRemainingInt === null) {
+    endsAtMs = newEndsAt;
+    lastServerRemainingInt = remainingInt;
+    return;
+  }
+
+  // Detect true reset/jump-up (e.g., 12 -> 60 after click)
+  const jumpedUp = remainingInt > lastServerRemainingInt + 1;
+
+  // Compare where our current endsAt thinks we are vs. server-implied endsAt
+  const driftMs = newEndsAt - endsAtMs;
+  const bigDrift = Math.abs(driftMs) > DRIFT_TOLERANCE_MS;
+
+  if (jumpedUp || bigDrift) {
+    // Hard resync only on real resets or large drift
+    endsAtMs = newEndsAt;
+  } else {
+    // Ignore normal 1-second ticks; optionally do a tiny smoothing correction
+    // to prevent long-term drift without visible snapping.
+    endsAtMs = endsAtMs + driftMs * DRIFT_SMOOTHING;
+  }
+
+  lastServerRemainingInt = remainingInt;
+};
+
 const getSmoothRemaining = () => {
-  // If we haven't received a server tick yet, show full time
-  if (!lastServerTime) return lastServerRemaining;
-
-  const elapsedSec = (performance.now() - lastServerTime) / 1000;
-  const smooth = lastServerRemaining - elapsedSec;
-  return Math.max(0, Math.min(countdownSeconds, smooth));
+  if (!endsAtMs) return countdownSeconds;
+  const remaining = (endsAtMs - performance.now()) / 1000; // float seconds
+  return Math.max(0, Math.min(countdownSeconds, remaining));
 };
 
-// For display/shake logic we usually want integers.
-const getDisplayRemaining = () => {
-  const smooth = getSmoothRemaining();
-  return Math.max(0, Math.ceil(smooth));
-};
+const getDisplayRemainingInt = () => Math.max(0, Math.ceil(getSmoothRemaining()));
 
 /* ---------- Countdown UI updates (guarded) ---------- */
 const updateShakeState = (displayRemainingInt) => {
@@ -166,7 +196,7 @@ const updateShellStateSmooth = (smoothRemainingFloat) => {
   if (!ringForeground || !ringCircumference || !countdownButton) return;
 
   const clamped = Math.max(0, Math.min(countdownSeconds, smoothRemainingFloat));
-  const progress = clamped / countdownSeconds; // 1 -> 0 smoothly
+  const progress = clamped / countdownSeconds; // smooth 1 -> 0
   const hue = Math.round(120 * progress);
   const dash = ringCircumference * progress;
 
@@ -209,12 +239,6 @@ const stopAnimation = () => {
 };
 
 /* ---------- SSE countdown ---------- */
-const applyServerRemaining = (remaining) => {
-  // remaining is expected to be integer seconds (server sends ceil)
-  lastServerRemaining = typeof remaining === "number" ? remaining : lastServerRemaining;
-  lastServerTime = performance.now();
-};
-
 const startSSE = () => {
   if (sse) return;
   try {
@@ -230,7 +254,7 @@ const startSSE = () => {
       }
     };
     sse.onerror = () => {
-      // Browser auto-retries. We keep animating based on last received tick.
+      // Browser auto-retries; animation continues from endsAtMs.
     };
   } catch {
     sse = null;
@@ -274,6 +298,7 @@ const postClick = async () => {
 
     const data = await response.json();
     if (typeof data.remaining === "number") {
+      // Click resets server timer -> should jump up -> endsAtMs hard-resync
       applyServerRemaining(data.remaining);
       clickBoostEndsAt = performance.now() + clickBoostDuration;
     }
@@ -323,11 +348,11 @@ window.addEventListener("popstate", () => {
 
 /* ---------- Boot ---------- */
 window.addEventListener("DOMContentLoaded", () => {
-  // Initialize client timer baseline so ring animates smoothly immediately.
-  lastServerRemaining = countdownSeconds;
-  lastServerTime = performance.now();
+  // Start a smooth local countdown immediately.
+  endsAtMs = performance.now() + countdownSeconds * 1000;
+  lastServerRemainingInt = countdownSeconds;
 
   showView(routeFromPath(location.pathname));
-  startAnimation(); // keep smooth ring running even before consent is granted
-  checkConsent();   // will start SSE if consent exists
+  startAnimation();
+  checkConsent(); // starts SSE if consent exists
 });
