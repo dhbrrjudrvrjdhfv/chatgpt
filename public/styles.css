@@ -1,27 +1,144 @@
 :root {
   color-scheme: light dark;
-  font-family: "Arial", sans-serif;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: #f5f5f5;
 }
 
+/* Gate EVERYTHING (including header) until consent */
+body:not(.has-consent) .site-header,
 body:not(.has-consent) .page {
   visibility: hidden;
 }
+
+/* ================= HEADER ================= */
+
+.site-header {
+  background: #fff;
+  width: 100%;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 28px;
+  font-weight: 700;
+}
+
+/* remove caret / text-cursor illusion on header */
+.site-header * {
+  caret-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+
+.header-inner {
+  padding: 24px 18px 32px; /* taller header */
+  box-sizing: border-box;
+}
+
+/* 2 rows × 3 columns:
+   (Guide/More) | (Logo) | (Visits Today)
+   (blank)      | (Payout) | (XXXX)
+*/
+.header-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr; /* logo dead center */
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 0;
+  row-gap: 22px;
+}
+
+/* Left top */
+.header-left {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  justify-content: space-evenly;
+  gap: 28px;
+  min-width: 0;
+}
+
+.nav-link {
+  color: #000;
+  text-decoration: none;
+  white-space: nowrap;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nav-link:hover,
+.nav-link:focus {
+  text-decoration: none;
+}
+
+/* Center top */
+.header-logo {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: center;
+  color: #000;
+  text-decoration: none;
+  white-space: nowrap;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.header-logo:hover,
+.header-logo:focus {
+  text-decoration: none;
+}
+
+/* Right top */
+.visits-label {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: center;
+  color: #000;
+  white-space: nowrap;
+  font-weight: 700;
+  cursor: default;
+}
+
+/* Row 2 / Col 1 spacer */
+.header-left-spacer {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+/* Center bottom */
+.payout-line {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: center;
+  color: #0a8f3c;
+  white-space: nowrap;
+  font-weight: 700;
+  cursor: default;
+}
+
+/* Right bottom */
+.visits-count {
+  grid-column: 3;
+  grid-row: 2;
+  justify-self: center;
+  color: #000;
+  white-space: nowrap;
+  font-weight: 700;
+  cursor: default;
+}
+
+/* ================= MAIN ================= */
 
 .page {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 100%;
+  min-height: calc(100vh - 170px); /* keep as-is */
 }
 
 .button-wrapper {
@@ -29,6 +146,8 @@ body:not(.has-consent) .page {
   align-items: center;
   justify-content: center;
 }
+
+/* ================= COUNTDOWN BUTTON ================= */
 
 .countdown-button {
   --core-size: 220px;
@@ -51,10 +170,7 @@ body:not(.has-consent) .page {
   outline: none;
 }
 
-.countdown-button:focus {
-  outline: none;
-}
-
+.countdown-button:focus,
 .countdown-button:focus-visible {
   outline: none;
 }
@@ -70,7 +186,6 @@ body:not(.has-consent) .page {
   justify-content: center;
   font-size: 64px;
   font-weight: 600;
-  font-family: inherit;
   line-height: 1;
   pointer-events: none;
   position: relative;
@@ -98,6 +213,8 @@ body:not(.has-consent) .page {
   stroke-width: var(--shell-size);
   stroke-linecap: butt;
 }
+
+/* ================= SHAKE ================= */
 
 .shake-subtle {
   animation: shake-subtle 0.18s infinite;
@@ -168,6 +285,8 @@ body:not(.has-consent) .page {
   }
 }
 
+/* ================= COOKIE MODAL ================= */
+
 .cookie-modal {
   position: fixed;
   inset: 0;
@@ -217,6 +336,7 @@ body:not(.has-consent) .page {
   cursor: pointer;
 }
 
+/* Restored from OLD (safe if unused) */
 .cookie-actions .secondary {
   background: transparent;
   color: #000;
@@ -233,6 +353,25 @@ body:not(.has-consent) .page {
   margin-top: 12px;
   color: #444;
 }
+
+/* ================= RESPONSIVE ================= */
+
+@media (max-width: 520px) {
+  .site-header {
+    font-size: 16px;
+  }
+  .header-inner {
+    padding: 16px 10px 20px;
+  }
+  .header-grid {
+    row-gap: 16px;
+  }
+  .header-left {
+    gap: 14px;
+  }
+}
+
+/* ================= DARK MODE ================= */
 
 @media (prefers-color-scheme: dark) {
   body {
