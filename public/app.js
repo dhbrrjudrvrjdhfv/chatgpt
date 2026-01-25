@@ -12,6 +12,7 @@ const allowCookiesButton = document.getElementById("allow-cookies");
 const cookieStatus = document.getElementById("cookie-status");
 const cookieError = document.getElementById("cookie-error");
 const cookieLimit = document.getElementById("cookie-limit");
+const nextPayoutTimer = document.getElementById("next-payout-timer");
 
 const navLinks = Array.from(document.querySelectorAll("[data-route]"));
 const views = Array.from(document.querySelectorAll(".view[data-view]"));
@@ -161,6 +162,22 @@ const refreshVisitsCount = async () => {
   }
 };
 
+/* ---------- Payout timer ---------- */
+const formatPayoutTime = (totalSeconds) => {
+  const clamped = Math.max(0, totalSeconds);
+  const hours = Math.floor(clamped / 3600);
+  const minutes = Math.floor((clamped % 3600) / 60);
+  const seconds = clamped % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(
+    seconds
+  ).padStart(2, "0")}`;
+};
+
+const setNextPayoutTimer = (remainingSeconds) => {
+  if (!nextPayoutTimer) return;
+  nextPayoutTimer.textContent = formatPayoutTime(remainingSeconds);
+};
+
 /* ---------- Apply server time WITHOUT 1Hz snapping ---------- */
 const applyServerRemaining = (remainingInt) => {
   if (typeof remainingInt !== "number" || Number.isNaN(remainingInt)) return;
@@ -271,6 +288,9 @@ const startSSE = () => {
         const data = JSON.parse(event.data);
         if (typeof data.remaining === "number") {
           applyServerRemaining(data.remaining);
+        }
+        if (typeof data.nextPayoutRemaining === "number") {
+          setNextPayoutTimer(data.nextPayoutRemaining);
         }
       } catch {
         // ignore
