@@ -5,6 +5,7 @@ import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import path from "path";
 import { fileURLToPath } from "url";
+import net from "net";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +14,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_CLIENTS = 1_000_000;
 const COOKIE_NAME = "client_token";
+const NIST_HOST = "time.nist.gov";
+const NIST_PORT = 13;
+const NIST_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 app.use(express.json());
 app.use(cookieParser());
@@ -31,15 +35,122 @@ const memoryStore = {
   clientCounter: 0,
   clients: new Map(),
   clickCounts: new Map(),
-  clickEvents: []
+  clickEvents: [],
+  visitsByDay: new Map()
 };
 
 const sseClients = new Set();
 let countdownEndAt = Date.now() + 60_000;
+const nistState = {
+  lastSyncMs: 0,
+  lastTimestampMs: 0
+};
 
 const getRemainingSeconds = () => {
   const remainingMs = countdownEndAt - Date.now();
   return Math.max(0, Math.ceil(remainingMs / 1000));
+};
+
+const getDateKeyFromTimestamp = (timestampMs) =>
+  new Date(timestampMs).toISOString().slice(0, 10);
+
+const parseNistResponse = (payload) => {
+  const parts = payload.trim().split(/\s+/);
+  if (parts.length < 3) return null;
+  const datePart = parts[1];
+  const timePart = parts[2];
+  const dateMatch = /^(\d{2})-(\d{2})-(\d{2})$/.exec(datePart);
+  const timeMatch = /^(\d{2}):(\d{2}):(\d{2})$/.exec(timePart);
+  if (!dateMatch || !timeMatch) return null;
+  const year = 2000 + Number(dateMatch[1]);
+  const month = Number(dateMatch[2]) - 1;
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const second = Number(timeMatch[3]);
+  return Date.UTC(year, month, day, hour, minute, second);
+};
+
+const fetchNistTimestamp = () =>
+  new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: NIST_HOST, port: NIST_PORT });
+    let data = "";
+    socket.setTimeout(2000);
+
+    socket.on("data", (chunk) => {
+      data += chunk.toString();
+    });
+
+    socket.on("end", () => {
+      const timestamp = parseNistResponse(data);
+      if (!timestamp) {
+        reject(new Error("NIST_PARSE_FAILED"));
+        return;
+      }
+      resolve(timestamp);
+    });
+
+    socket.on("timeout", () => {
+      socket.destroy();
+      reject(new Error("NIST_TIMEOUT"));
+    });
+
+    socket.on("error", (error) => {
+      reject(error);
+    });
+  });
+
+const getNistNow = async () => {
+  const now = Date.now();
+  if (nistState.lastSyncMs && now - nistState.lastSyncMs < NIST_SYNC_INTERVAL_MS) {
+    return nistState.lastTimestampMs + (now - nistState.lastSyncMs);
+  }
+  try {
+    const timestamp = await fetchNistTimestamp();
+    nistState.lastSyncMs = now;
+    nistState.lastTimestampMs = timestamp;
+    return timestamp;
+  } catch {
+    if (nistState.lastSyncMs) {
+      return nistState.lastTimestampMs + (now - nistState.lastSyncMs);
+    }
+    return now;
+  }
+};
+
+const recordVisit = async (id) => {
+  const timestamp = await getNistNow();
+  const dateKey = getDateKeyFromTimestamp(timestamp);
+
+  if (!db) {
+    const existing = memoryStore.visitsByDay.get(dateKey) ?? new Set();
+    existing.add(String(id));
+    memoryStore.visitsByDay.set(dateKey, existing);
+    return;
+  }
+
+  const visitorRef = db
+    .collection("visitDays")
+    .doc(dateKey)
+    .collection("visitors")
+    .doc(String(id));
+
+  await visitorRef.set({ lastSeen: timestamp }, { merge: true });
+};
+
+const getVisitsTodayCount = async () => {
+  const timestamp = await getNistNow();
+  const dateKey = getDateKeyFromTimestamp(timestamp);
+  if (!db) {
+    const visits = memoryStore.visitsByDay.get(dateKey);
+    return visits ? visits.size : 0;
+  }
+  const snapshot = await db
+    .collection("visitDays")
+    .doc(dateKey)
+    .collection("visitors")
+    .get();
+  return snapshot.size;
 };
 
 const broadcastCountdown = () => {
@@ -100,6 +211,7 @@ app.get("/api/me", async (req, res) => {
   if (!id) {
     return res.status(200).json({ hasId: false });
   }
+  await recordVisit(id);
   return res.status(200).json({ hasId: true, id });
 });
 
@@ -114,8 +226,18 @@ app.post("/api/consent", async (req, res) => {
   if (!newId) {
     return res.status(403).json({ error: "MAX_CLIENTS_REACHED" });
   }
+  await recordVisit(newId);
   res.cookie(COOKIE_NAME, token, { httpOnly: true, sameSite: "lax" });
   return res.status(200).json({ id: newId });
+});
+
+app.get("/api/visits-today", async (req, res) => {
+  try {
+    const count = await getVisitsTodayCount();
+    return res.status(200).json({ count });
+  } catch {
+    return res.status(500).json({ error: "VISITS_LOOKUP_FAILED" });
+  }
 });
 
 app.get("/events", (req, res) => {
