@@ -1,4 +1,5 @@
 // public/app.js
+// Smooth, timer-tied SVG ring movement (client-side interpolation between 1Hz server ticks)
 
 const countdownButton = document.getElementById("countdown-button");
 const countdownValue = document.getElementById("countdown-value");
@@ -16,8 +17,10 @@ const views = Array.from(document.querySelectorAll(".view[data-view]"));
 let hasConsent = false;
 
 const countdownSeconds = 60;
-let lastServerRemaining = countdownSeconds;
-let lastServerTime = 0; // performance.now() timestamp when last server remaining received
+
+// Server-provided countdown state (arrives ~1Hz via SSE or on click response)
+let lastServerRemaining = countdownSeconds; // integer seconds from server
+let lastServerTime = 0; // performance.now() when lastServerRemaining was received
 
 let animationFrame = null;
 let ringCircumference = 0;
@@ -74,7 +77,7 @@ const checkConsent = async () => {
       showCookieModal();
       setCookieStatus('No cookie ID detected yet. Tap “Allow Cookies” to create one.');
       stopSSE();
-      stopAnimation();
+      startAnimation(); // keep UI animating (optional). Gate is CSS anyway.
       return false;
     }
 
@@ -88,7 +91,7 @@ const checkConsent = async () => {
     showCookieModal();
     setCookieStatus("Unable to reach the server. Please try again.");
     stopSSE();
-    stopAnimation();
+    startAnimation();
     return false;
   }
 };
@@ -100,7 +103,10 @@ const requestConsent = async () => {
   setCookieStatus("Requesting cookie consent…");
 
   try {
-    const response = await fetch("/api/consent", { method: "POST", credentials: "same-origin" });
+    const response = await fetch("/api/consent", {
+      method: "POST",
+      credentials: "same-origin"
+    });
 
     if (response.status === 403) {
       if (cookieLimit) cookieLimit.hidden = false;
@@ -126,24 +132,41 @@ if (allowCookiesButton) {
   allowCookiesButton.addEventListener("click", requestConsent);
 }
 
+/* ---------- Smooth time model (core change) ---------- */
+// Returns a smooth, continuously decreasing remaining time in seconds (float).
+const getSmoothRemaining = () => {
+  // If we haven't received a server tick yet, show full time
+  if (!lastServerTime) return lastServerRemaining;
+
+  const elapsedSec = (performance.now() - lastServerTime) / 1000;
+  const smooth = lastServerRemaining - elapsedSec;
+  return Math.max(0, Math.min(countdownSeconds, smooth));
+};
+
+// For display/shake logic we usually want integers.
+const getDisplayRemaining = () => {
+  const smooth = getSmoothRemaining();
+  return Math.max(0, Math.ceil(smooth));
+};
+
 /* ---------- Countdown UI updates (guarded) ---------- */
-const updateShakeState = (remaining) => {
+const updateShakeState = (displayRemainingInt) => {
   if (!countdownButton) return;
 
   countdownButton.classList.remove("shake-subtle", "shake-medium", "shake-heavy");
 
-  if (remaining <= 0 || remaining >= 31) return;
+  if (displayRemainingInt <= 0 || displayRemainingInt >= 31) return;
 
-  if (remaining <= 5) countdownButton.classList.add("shake-heavy");
-  else if (remaining <= 15) countdownButton.classList.add("shake-medium");
+  if (displayRemainingInt <= 5) countdownButton.classList.add("shake-heavy");
+  else if (displayRemainingInt <= 15) countdownButton.classList.add("shake-medium");
   else countdownButton.classList.add("shake-subtle");
 };
 
-const updateShellState = (remaining) => {
+const updateShellStateSmooth = (smoothRemainingFloat) => {
   if (!ringForeground || !ringCircumference || !countdownButton) return;
 
-  const clamped = Math.max(0, Math.min(countdownSeconds, remaining));
-  const progress = Math.min(1, clamped / countdownSeconds);
+  const clamped = Math.max(0, Math.min(countdownSeconds, smoothRemainingFloat));
+  const progress = clamped / countdownSeconds; // 1 -> 0 smoothly
   const hue = Math.round(120 * progress);
   const dash = ringCircumference * progress;
 
@@ -151,31 +174,26 @@ const updateShellState = (remaining) => {
   countdownButton.style.setProperty("--shell-hue", hue.toString());
 };
 
-// FIX: this was broken in your file (it said `return index.html`)
-const getBoostedDisplayValue = (remaining) => {
-  if (remaining <= 0) return 0;
-  if (clickBoostEndsAt && performance.now() < clickBoostEndsAt) return remaining;
-  return remaining;
+const getBoostedDisplayValue = (displayRemainingInt) => {
+  if (displayRemainingInt <= 0) return 0;
+  if (clickBoostEndsAt && performance.now() < clickBoostEndsAt) return displayRemainingInt;
+  return displayRemainingInt;
 };
 
-const setCountdownText = (remaining) => {
+const setCountdownText = (displayRemainingInt) => {
   if (!countdownValue) return;
-  const display = getBoostedDisplayValue(remaining);
-  countdownValue.textContent = String(display);
+  countdownValue.textContent = String(getBoostedDisplayValue(displayRemainingInt));
 };
 
-const getEstimatedRemaining = () => {
-  if (!lastServerTime) return lastServerRemaining;
-  const elapsed = (performance.now() - lastServerTime) / 1000;
-  const est = Math.max(0, Math.ceil(lastServerRemaining - elapsed));
-  return Math.min(countdownSeconds, est);
-};
-
+/* ---------- Animation loop ---------- */
 const tickUI = () => {
-  const remaining = getEstimatedRemaining();
-  setCountdownText(remaining);
-  updateShakeState(remaining);
-  updateShellState(remaining);
+  const smoothRemaining = getSmoothRemaining();
+  const displayRemaining = Math.max(0, Math.ceil(smoothRemaining));
+
+  setCountdownText(displayRemaining);
+  updateShakeState(displayRemaining);
+  updateShellStateSmooth(smoothRemaining);
+
   animationFrame = requestAnimationFrame(tickUI);
 };
 
@@ -191,6 +209,12 @@ const stopAnimation = () => {
 };
 
 /* ---------- SSE countdown ---------- */
+const applyServerRemaining = (remaining) => {
+  // remaining is expected to be integer seconds (server sends ceil)
+  lastServerRemaining = typeof remaining === "number" ? remaining : lastServerRemaining;
+  lastServerTime = performance.now();
+};
+
 const startSSE = () => {
   if (sse) return;
   try {
@@ -199,18 +223,16 @@ const startSSE = () => {
       try {
         const data = JSON.parse(event.data);
         if (typeof data.remaining === "number") {
-          lastServerRemaining = data.remaining;
-          lastServerTime = performance.now();
+          applyServerRemaining(data.remaining);
         }
       } catch {
-        // ignore bad payloads
+        // ignore
       }
     };
     sse.onerror = () => {
-      // If SSE drops, keep UI running from last known state; browser will retry automatically.
+      // Browser auto-retries. We keep animating based on last received tick.
     };
   } catch {
-    // EventSource not available; UI will still render from click responses if any.
     sse = null;
   }
 };
@@ -252,12 +274,11 @@ const postClick = async () => {
 
     const data = await response.json();
     if (typeof data.remaining === "number") {
-      lastServerRemaining = data.remaining;
-      lastServerTime = performance.now();
+      applyServerRemaining(data.remaining);
       clickBoostEndsAt = performance.now() + clickBoostDuration;
     }
   } catch {
-    // ignore network errors
+    // ignore
   }
 };
 
@@ -265,7 +286,7 @@ if (countdownButton) {
   countdownButton.addEventListener("click", postClick);
 }
 
-/* ---------- Minimal in-page routing (optional) ---------- */
+/* ---------- Minimal in-page routing ---------- */
 const showView = (name) => {
   for (const section of views) {
     const isMatch = section.getAttribute("data-view") === name;
@@ -302,6 +323,11 @@ window.addEventListener("popstate", () => {
 
 /* ---------- Boot ---------- */
 window.addEventListener("DOMContentLoaded", () => {
+  // Initialize client timer baseline so ring animates smoothly immediately.
+  lastServerRemaining = countdownSeconds;
+  lastServerTime = performance.now();
+
   showView(routeFromPath(location.pathname));
-  checkConsent();
+  startAnimation(); // keep smooth ring running even before consent is granted
+  checkConsent();   // will start SSE if consent exists
 });
