@@ -7,18 +7,53 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="page">
-      <div class="button-wrapper">
-        <button id="countdown-button" class="countdown-button" type="button">
-          <svg class="countdown-ring" viewBox="0 0 200 200" aria-hidden="true">
-            <circle class="countdown-ring-bg" cx="100" cy="100" r="90"></circle>
-            <circle class="countdown-ring-fg" cx="100" cy="100" r="90"></circle>
-          </svg>
-          <span class="countdown-core">
-            <span id="countdown-value">60</span>
-          </span>
-        </button>
+    <!-- Header (now gated too via CSS: body:not(.has-consent) .site-header { visibility:hidden; }) -->
+    <header class="site-header">
+      <div class="header-inner">
+        <div class="header-grid">
+          <!-- Row 1 / Col 1 -->
+          <div class="header-left">
+            <a class="nav-link" href="/guide" data-route="guide">Guide</a>
+            <a class="nav-link" href="/more" data-route="more">More</a>
+          </div>
+
+          <!-- Row 1 / Col 2 -->
+          <a class="header-logo" href="/" data-route="home">Ouroboros</a>
+
+          <!-- Row 1 / Col 3 -->
+          <div class="visits-label">Visits Today</div>
+
+          <!-- Row 2 / Col 1 -->
+          <div class="header-left-spacer"></div>
+
+          <!-- Row 2 / Col 2 -->
+          <div class="payout-line">Current payout XXXX → Next in XX:XX:XX</div>
+
+          <!-- Row 2 / Col 3 -->
+          <div class="visits-count">XXXX</div>
+        </div>
       </div>
+    </header>
+
+    <main class="page">
+      <!-- Home view (contains the original countdown button markup from OLD) -->
+      <section class="view" data-view="home">
+        <div class="button-wrapper">
+          <button id="countdown-button" class="countdown-button" type="button">
+            <svg class="countdown-ring" viewBox="0 0 200 200" aria-hidden="true">
+              <circle class="countdown-ring-bg" cx="100" cy="100" r="90"></circle>
+              <circle class="countdown-ring-fg" cx="100" cy="100" r="90"></circle>
+            </svg>
+            <span class="countdown-core">
+              <span id="countdown-value">60</span>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Other routes -->
+      <section class="view" data-view="guide" hidden></section>
+      <section class="view" data-view="more" hidden></section>
     </main>
 
     <div id="cookie-modal" class="cookie-modal" aria-hidden="true">
