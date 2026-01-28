@@ -1,185 +1,38 @@
-// public/app.js
-// Smooth continuous SVG ring flow (no 1Hz snapping).
-// Key idea: maintain a client-side continuous "endsAtMs" and IGNORE normal 1-second SSE ticks,
-// only resync on real resets (jump up) or large drift.
-
-const countdownButton = document.getElementById("countdown-button");
-const countdownValue = document.getElementById("countdown-value");
-const ringForeground = document.querySelector(".countdown-ring-fg");
-
-const cookieModal = document.getElementById("cookie-modal");
-const allowCookiesButton = document.getElementById("allow-cookies");
-const cookieStatus = document.getElementById("cookie-status");
-const cookieError = document.getElementById("cookie-error");
-const cookieLimit = document.getElementById("cookie-limit");
-const nextPayoutTimer = document.getElementById("next-payout-timer");
-
-const navLinks = Array.from(document.querySelectorAll("[data-route]"));
-const views = Array.from(document.querySelectorAll(".view[data-view]"));
-const visitsCount = document.getElementById("visits-count");
-
-let hasConsent = false;
-
-const countdownSeconds = 60;
-
-// ---------- Continuous timer model ----------
-let endsAtMs = 0; // performance.now() time when countdown should hit 0
-let lastServerRemainingInt = null;
-
-// Tuning: tolerate small network jitter/drift without visible snaps
-const DRIFT_TOLERANCE_MS = 300; // only hard-resync if drift is bigger than this
-const DRIFT_SMOOTHING = 0.05;   // small gradual correction factor
-
 let animationFrame = null;
-let ringCircumference = 0;
 
 const clickBoostDuration = 1000;
 let clickBoostEndsAt = 0;
+let isFinished = false;
 
-let sse = null;
-let visitsInterval = null;
+/* ---------- Snake setup (guarded) ---------- */
+let orbitLength = 0;
+const segEls = [];
+const SEGMENTS = 30;
+const END_GAP = 10;
+const SEG_OVERLAP = 10;
+const SHELL_SIZE = 22;
+const BODY_BASE = SHELL_SIZE * 0.78;
+const TAIL_SCALE = 0.42;
+const HEAD_SCALE = 1.0;
 
-/* ---------- Ring setup (guarded) ---------- */
-if (ringForeground && ringForeground.r && ringForeground.r.baseVal) {
-  const radius = ringForeground.r.baseVal.value;
-  ringCircumference = 2 * Math.PI * radius;
-  ringForeground.style.strokeDasharray = `${ringCircumference} ${ringCircumference}`;
-  ringForeground.style.strokeDashoffset = "0";
-}
-
-/* ---------- Cookie/consent helpers (guarded) ---------- */
-const setCookieStatus = (message, { show = true } = {}) => {
-  if (!cookieStatus) return;
-  cookieStatus.textContent = message;
-  cookieStatus.hidden = !show;
-};
-
-const setConsentState = (granted) => {
-  document.body.classList.toggle("has-consent", granted);
-};
-
-const showCookieModal = () => {
-  setConsentState(false);
-  if (!cookieModal) return;
-  cookieModal.classList.add("is-visible");
-  cookieModal.setAttribute("aria-hidden", "false");
-};
-
-const hideCookieModal = () => {
-  setConsentState(true);
-  if (!cookieModal) return;
-  cookieModal.classList.remove("is-visible");
-  cookieModal.setAttribute("aria-hidden", "true");
-  if (cookieError) cookieError.hidden = true;
-  if (cookieLimit) cookieLimit.hidden = true;
-  if (cookieStatus) cookieStatus.hidden = true;
-};
-
-const checkConsent = async () => {
-  try {
-    const response = await fetch("/api/me", { credentials: "same-origin" });
-    if (!response.ok) throw new Error("status");
-
-    const data = await response.json();
-    if (!data.hasId) {
-      hasConsent = false;
-      showCookieModal();
-      setCookieStatus('No cookie ID detected yet. Tap “Allow Cookies” to create one.');
-      stopSSE();
-      startAnimation();
-      return false;
-    }
-
-    hasConsent = true;
-    hideCookieModal();
-    startSSE();
-    startAnimation();
-    refreshVisitsCount();
-    return true;
-  } catch {
-    hasConsent = false;
-    showCookieModal();
-    setCookieStatus("Unable to reach the server. Please try again.");
-    stopSSE();
-    startAnimation();
-    return false;
+const initSnakeSegments = () => {
+  if (!orbitMeasure || !snakeBody) return;
+  orbitLength = orbitMeasure.getTotalLength();
+  for (let i = 0; i < SEGMENTS; i += 1) {
+    const segment = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    segment.setAttribute("href", "#orbit");
+    segment.setAttribute("class", "body-seg");
+    segment.style.opacity = "0";
+    snakeBody.appendChild(segment);
+    segEls.push(segment);
   }
 };
 
-const requestConsent = async () => {
-  if (cookieError) cookieError.hidden = true;
-  if (cookieLimit) cookieLimit.hidden = true;
-
-  setCookieStatus("Requesting cookie consent…");
-
-  try {
-    const response = await fetch("/api/consent", {
-      method: "POST",
-      credentials: "same-origin"
-    });
-
-    if (response.status === 403) {
-      if (cookieLimit) cookieLimit.hidden = false;
-      setCookieStatus("The 1,000,000 user limit has been reached.");
-      return;
-    }
-
-    if (!response.ok) {
-      if (cookieError) cookieError.hidden = false;
-      setCookieStatus("Cookie request failed. Please try again.");
-      return;
-    }
-
-    await checkConsent();
-    if (!hasConsent && cookieError) cookieError.hidden = false;
-  } catch {
-    if (cookieError) cookieError.hidden = false;
-    setCookieStatus("Network error. Please try again.");
-  }
-};
-
-if (allowCookiesButton) {
-  allowCookiesButton.addEventListener("click", requestConsent);
-}
-
-/* ---------- Visits today ---------- */
-const setVisitsCount = (value) => {
-  if (!visitsCount) return;
-  visitsCount.textContent = value;
-};
-
-const refreshVisitsCount = async () => {
-  if (!visitsCount) return;
-  try {
-    const response = await fetch("/api/visits-today", { credentials: "same-origin" });
-    if (!response.ok) return;
-    const data = await response.json();
-    if (typeof data.count === "number") {
-      setVisitsCount(String(data.count));
-    }
-  } catch {
-    // ignore
-  }
-};
-
-/* ---------- Payout timer ---------- */
-const formatPayoutTime = (totalSeconds) => {
-  const clamped = Math.max(0, totalSeconds);
-  const hours = Math.floor(clamped / 3600);
-  const minutes = Math.floor((clamped % 3600) / 60);
-  const seconds = clamped % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(
-    seconds
-  ).padStart(2, "0")}`;
-};
-
-const setNextPayoutTimer = (remainingSeconds) => {
-  if (!nextPayoutTimer) return;
-  nextPayoutTimer.textContent = formatPayoutTime(remainingSeconds);
-};
+initSnakeSegments();
 
 /* ---------- Apply server time WITHOUT 1Hz snapping ---------- */
 const applyServerRemaining = (remainingInt) => {
+  if (isFinished) return;
   if (typeof remainingInt !== "number" || Number.isNaN(remainingInt)) return;
 
   const now = performance.now();
@@ -211,37 +64,109 @@ const applyServerRemaining = (remainingInt) => {
   lastServerRemainingInt = remainingInt;
 };
 
-const getSmoothRemaining = () => {
-  if (!endsAtMs) return countdownSeconds;
-  const remaining = (endsAtMs - performance.now()) / 1000; // float seconds
-  return Math.max(0, Math.min(countdownSeconds, remaining));
-};
-
-const getDisplayRemainingInt = () => Math.max(0, Math.ceil(getSmoothRemaining()));
-
 /* ---------- Countdown UI updates (guarded) ---------- */
-const updateShakeState = (displayRemainingInt) => {
-  if (!countdownButton) return;
+const RAINBOW = ["#FF0000", "#FF7A00", "#FFD400", "#00C853", "#00E5FF", "#2979FF", "#AA00FF"];
 
-  countdownButton.classList.remove("shake-subtle", "shake-medium", "shake-heavy");
-
-  if (displayRemainingInt <= 0 || displayRemainingInt >= 31) return;
-
-  if (displayRemainingInt <= 5) countdownButton.classList.add("shake-heavy");
-  else if (displayRemainingInt <= 15) countdownButton.classList.add("shake-medium");
-  else countdownButton.classList.add("shake-subtle");
+const hexToRgb = (hex) => {
+  const cleaned = hex.replace("#", "");
+  const value = Number.parseInt(cleaned, 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
 };
 
-const updateShellStateSmooth = (smoothRemainingFloat) => {
-  if (!ringForeground || !ringCircumference || !countdownButton) return;
+const lerpColor = (hexA, hexB, t) => {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  const r = Math.round(a.r + (b.r - a.r) * t);
+  const g = Math.round(a.g + (b.g - a.g) * t);
+  const b2 = Math.round(a.b + (b.b - a.b) * t);
+  return `rgb(${r}, ${g}, ${b2})`;
+};
 
-  const clamped = Math.max(0, Math.min(countdownSeconds, smoothRemainingFloat));
-  const progress = clamped / countdownSeconds; // smooth 1 -> 0
-  const hue = Math.round(120 * progress);
-  const dash = ringCircumference * progress;
+const rainbowAt = (progress01) => {
+  const n = RAINBOW.length;
+  if (progress01 <= 0) return RAINBOW[0];
+  if (progress01 >= 1) return RAINBOW[n - 1];
+  const scaled = progress01 * (n - 1);
+  const i = Math.floor(scaled);
+  const t = scaled - i;
+  return lerpColor(RAINBOW[i], RAINBOW[i + 1], t);
+};
 
-  ringForeground.style.strokeDasharray = `${dash} ${ringCircumference}`;
-  countdownButton.style.setProperty("--shell-hue", hue.toString());
+const shakeLevel = (remainingSeconds) => {
+  if (remainingSeconds <= 0) return 0;
+  if (remainingSeconds <= 5) return 10;
+  if (remainingSeconds <= 10) return 8;
+  if (remainingSeconds <= 20) return 6;
+  if (remainingSeconds <= 30) return 4;
+  if (remainingSeconds <= 45) return 2;
+  return 0;
+};
+
+const shakeTransform = (tsMs, level) => {
+  if (level <= 0) return { x: 0, y: 0, r: 0 };
+  const ampPx = level * 0.55;
+  const ampDeg = level * 0.18;
+  const t = tsMs / 1000;
+  const x = (Math.sin(t * 37) + 0.6 * Math.sin(t * 53 + 1.3)) * ampPx * 0.55;
+  const y = (Math.sin(t * 41 + 2.1) + 0.6 * Math.sin(t * 59 + 0.4)) * ampPx * 0.55;
+  const r = Math.sin(t * 47 + 0.7) * ampDeg;
+  return { x, y, r };
+};
+
+const applyShake = (remainingSeconds, nowMs) => {
+  if (!countdownButton) return;
+  if (isFinished) {
+    countdownButton.style.transform = "translate(0px, 0px) rotate(0deg)";
+    return;
+  }
+  const level = shakeLevel(remainingSeconds);
+  const s = shakeTransform(nowMs, level);
+  countdownButton.style.transform = `translate(${s.x.toFixed(2)}px, ${s.y.toFixed(2)}px) rotate(${s.r.toFixed(2)}deg)`;
+};
+
+const updateCoreDanger = (remainingSeconds) => {
+  if (!countdownCore) return;
+  countdownCore.classList.toggle("is-danger", remainingSeconds <= 10);
+};
+
+const setHeadAtLength = (length) => {
+  if (!orbitMeasure || !snakeHead || !orbitLength) return;
+  const pos = ((length % orbitLength) + orbitLength) % orbitLength;
+  const p = orbitMeasure.getPointAtLength(pos);
+  const p2 = orbitMeasure.getPointAtLength((pos + 1) % orbitLength);
+  const angle = (Math.atan2(p2.y - p.y, p2.x - p.x) * 180) / Math.PI;
+  snakeHead.setAttribute("transform", `translate(${p.x} ${p.y}) rotate(${angle})`);
+};
+
+const renderSnake = (progress01) => {
+  if (!orbitLength || !snakeHeadShape) return;
+  const headPos = progress01 * orbitLength;
+  const targetBodyLen = Math.min(headPos, Math.max(0, orbitLength - END_GAP));
+  const segLen = SEGMENTS ? targetBodyLen / SEGMENTS : 0;
+
+  const snakeColor = rainbowAt(progress01);
+  setHeadAtLength(headPos);
+
+  const headBodyThickness = BODY_BASE * HEAD_SCALE;
+  snakeHeadShape.setAttribute("rx", String(headBodyThickness * 0.95));
+  snakeHeadShape.setAttribute("ry", String(headBodyThickness * 0.62));
+  snakeHeadShape.setAttribute("fill", snakeColor);
+
+  segEls.forEach((seg, index) => {
+    const segStart = index * segLen;
+    let len = Math.max(0, Math.min(segLen + SEG_OVERLAP, targetBodyLen - segStart));
+    if (len <= 0.0001) {
+      seg.style.opacity = "0";
+      return;
+    }
+    const t = SEGMENTS === 1 ? 1 : index / (SEGMENTS - 1);
+    const w = BODY_BASE * (TAIL_SCALE + t * (HEAD_SCALE - TAIL_SCALE));
+    seg.style.strokeWidth = String(w);
+    seg.style.stroke = snakeColor;
+    seg.style.strokeDasharray = `${len} ${orbitLength}`;
+    seg.style.strokeDashoffset = `${-segStart}`;
+    seg.style.opacity = "1";
+  });
 };
 
 const getBoostedDisplayValue = (displayRemainingInt) => {
@@ -257,149 +182,37 @@ const setCountdownText = (displayRemainingInt) => {
 
 /* ---------- Animation loop ---------- */
 const tickUI = () => {
+  const nowMs = performance.now();
   const smoothRemaining = getSmoothRemaining();
   const displayRemaining = Math.max(0, Math.ceil(smoothRemaining));
+  const clamped = Math.max(0, Math.min(countdownSeconds, smoothRemaining));
+  const progress = isFinished ? 1 : 1 - clamped / countdownSeconds;
 
   setCountdownText(displayRemaining);
-  updateShakeState(displayRemaining);
-  updateShellStateSmooth(smoothRemaining);
+  updateCoreDanger(displayRemaining);
+  applyShake(displayRemaining, nowMs);
+  renderSnake(progress);
+  if (!isFinished && displayRemaining <= 0) {
+    isFinished = true;
+    if (countdownButton) {
+      countdownButton.classList.add("is-finished");
+      countdownButton.style.transform = "translate(0px, 0px) rotate(0deg)";
+    }
+    if (countdownCore) {
+      countdownCore.classList.add("is-danger");
+    }
+  }
 
   animationFrame = requestAnimationFrame(tickUI);
-};
-
-const startAnimation = () => {
-  if (animationFrame) return;
-  animationFrame = requestAnimationFrame(tickUI);
-};
-
-const stopAnimation = () => {
-  if (!animationFrame) return;
-  cancelAnimationFrame(animationFrame);
-  animationFrame = null;
-};
-
-/* ---------- SSE countdown ---------- */
-const startSSE = () => {
-  if (sse) return;
-  try {
-    sse = new EventSource("/events");
-    sse.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (typeof data.remaining === "number") {
-          applyServerRemaining(data.remaining);
-        }
-        if (typeof data.nextPayoutRemaining === "number") {
-          setNextPayoutTimer(data.nextPayoutRemaining);
-        }
-      } catch {
-        // ignore
-      }
-    };
-    sse.onerror = () => {
-      // Browser auto-retries; animation continues from endsAtMs.
-    };
-  } catch {
-    sse = null;
-  }
-};
-
-const stopSSE = () => {
-  if (!sse) return;
-  try {
-    sse.close();
-  } catch {
-    // ignore
-  }
-  sse = null;
 };
 
 /* ---------- Click handler ---------- */
 const postClick = async () => {
+  if (isFinished) return;
   if (!hasConsent) {
     showCookieModal();
     setCookieStatus("Please allow cookies to use the site.");
     return;
   }
-
-  try {
-    const response = await fetch("/api/click", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({})
-    });
-
-    if (response.status === 401) {
-      hasConsent = false;
-      showCookieModal();
-      setCookieStatus("Cookie missing or blocked. Tap “Allow Cookies” again.");
-      return;
-    }
-
-    if (!response.ok) return;
-
-    const data = await response.json();
-    if (typeof data.remaining === "number") {
-      // Click resets server timer -> should jump up -> endsAtMs hard-resync
-      applyServerRemaining(data.remaining);
-      clickBoostEndsAt = performance.now() + clickBoostDuration;
-    }
-  } catch {
-    // ignore
-  }
+  // ...
 };
-
-if (countdownButton) {
-  countdownButton.addEventListener("click", postClick);
-}
-
-/* ---------- Minimal in-page routing ---------- */
-const showView = (name) => {
-  for (const section of views) {
-    const isMatch = section.getAttribute("data-view") === name;
-    section.hidden = !isMatch;
-  }
-};
-
-const routeFromPath = (pathname) => {
-  const p = (pathname || "/").replace(/^\/+/, "").toLowerCase();
-  if (p === "" || p === "home") return "home";
-  if (p === "guide") return "guide";
-  if (p === "more") return "more";
-  return "home";
-};
-
-const navigate = (path) => {
-  history.pushState({}, "", path);
-  showView(routeFromPath(location.pathname));
-};
-
-for (const link of navLinks) {
-  link.addEventListener("click", (e) => {
-    const route = link.getAttribute("data-route");
-    if (!route) return;
-    e.preventDefault();
-    if (route === "home") navigate("/");
-    else navigate(`/${route}`);
-  });
-}
-
-window.addEventListener("popstate", () => {
-  showView(routeFromPath(location.pathname));
-});
-
-/* ---------- Boot ---------- */
-window.addEventListener("DOMContentLoaded", () => {
-  // Start a smooth local countdown immediately.
-  endsAtMs = performance.now() + countdownSeconds * 1000;
-  lastServerRemainingInt = countdownSeconds;
-
-  showView(routeFromPath(location.pathname));
-  startAnimation();
-  checkConsent(); // starts SSE if consent exists
-  refreshVisitsCount();
-  if (!visitsInterval) {
-    visitsInterval = setInterval(refreshVisitsCount, 60_000);
-  }
-});
