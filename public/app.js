@@ -3,6 +3,7 @@
 const countdownButton = document.getElementById("countdown-button");
 const countdownValue = document.getElementById("countdown-value");
 const coreEl = document.getElementById("countdown-core");
+const payoutTimer = document.getElementById("payout-timer");
 
 const cookieModal = document.getElementById("cookie-modal");
 const allowCookiesButton = document.getElementById("allow-cookies");
@@ -18,6 +19,24 @@ let clickBoostEndsAt = 0;
 
 let animationFrame = null;
 let lastEndsAt = 0;
+
+const formatHms = (totalSeconds) => {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
+const updatePayoutTimer = (remainingSeconds, isReady) => {
+  if (!payoutTimer) return;
+  if (!isReady) {
+    payoutTimer.textContent = "LOADING";
+    return;
+  }
+  payoutTimer.textContent = formatHms(remainingSeconds);
+};
 
 // ===== consent =====
 
@@ -269,6 +288,7 @@ const connectEvents = () => {
     const data = JSON.parse(event.data);
 
     lastEndsAt = data.endsAt || 0;
+    updatePayoutTimer(data.payoutRemaining, data.nistReady);
 
     // Re-enable visuals when server resets (>0)
     if (data.remaining > 0) {
