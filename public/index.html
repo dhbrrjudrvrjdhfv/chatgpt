@@ -1,85 +1,110 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Global Countdown Button</title>
-<link rel="stylesheet" href="/styles.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Global Countdown Button</title>
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-<header class="site-header">
-<div class="header-inner">
-<div class="header-grid">
-<!-- Row 1 / Col 1 -->
-<div class="header-left">
-<a class="nav-link" href="/guide" data-route="guide">Guide</a>
-<a class="nav-link" href="/more" data-route="more">More</a>
-</div>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="header-grid">
+        <!-- Row 1 / Col 1 -->
+        <div class="header-left">
+          <a class="nav-link" href="/guide" data-route="guide">Guide</a>
+          <a class="nav-link" href="/more" data-route="more">More</a>
+        </div>
 
-<!-- Row 1 / Col 2 -->
-<a class="header-logo" href="/" data-route="home">Ouroboros</a>
+        <!-- Row 1 / Col 2 -->
+        <a class="header-logo" href="/" data-route="home">Ouroboros</a>
 
-<!-- Row 1 / Col 3 -->
-<div class="visits-label">Visits Today</div>
+        <!-- Row 1 / Col 3 -->
+        <div class="visits-label">Visits Today</div>
 
-<!-- Row 2 / Col 1 -->
-<div class="header-left-spacer"></div>
+        <!-- Row 2 / Col 1 -->
+        <div class="header-left-spacer"></div>
 
-<!-- Row 2 / Col 2 -->
-<div class="payout-line">Current payout XXXX → Next in XX:XX:XX</div>
+        <!-- Row 2 / Col 2 -->
+        <div class="payout-line">Current payout XXXX → Next in XX:XX:XX</div>
 
-<!-- Row 2 / Col 3 -->
-<div class="visits-count">XXXX</div>
-</div>
-</div>
-</header>
+        <!-- Row 2 / Col 3 -->
+        <div class="visits-count">XXXX</div>
+      </div>
+    </div>
+  </header>
 
-<main class="page">
-<section class="view" data-view="home">
-<div class="button-wrapper">
-<button id="countdown-button" class="countdown-button" type="button">
-<svg class="countdown-ring" viewBox="0 0 200 200" aria-hidden="true">
-<circle class="countdown-ring-bg" cx="100" cy="100" r="90"></circle>
-<circle class="countdown-ring-fg" cx="100" cy="100" r="90"></circle>
-</svg>
-<span class="countdown-core">
-<span id="countdown-value">60</span>
-</span>
-</button>
-</div>
-</section>
+  <main class="page">
+    <section class="view" data-view="home">
+      <div class="button-wrapper">
+        <button id="countdown-button" class="countdown-button" type="button" aria-label="Ouroboros countdown">
+          <svg class="countdown-ring" viewBox="0 0 264 264" aria-hidden="true">
+            <defs>
+              <path id="orbit"
+                d="M 132 11
+                   a 121 121 0 1 1 0 242
+                   a 121 121 0 1 1 0 -242" />
+            </defs>
 
-<section class="view" data-view="guide" hidden></section>
-<section class="view" data-view="more" hidden></section>
-</main>
+            <circle class="ring-bg" cx="132" cy="132" r="121"></circle>
+            <g id="body"></g>
 
-<div id="cookie-modal" class="cookie-modal" aria-hidden="true">
-<div class="cookie-card" role="dialog" aria-live="assertive">
-<h1>Cookie Permission Needed</h1>
-<p>
-This site needs cookies to work. If cookies are blocked, the site cannot be used.
-</p>
-<p>Common reasons cookies might not work:</p>
-<ul>
-<li>Cookies are turned off in browser settings.</li>
-<li>Private/Incognito mode is enabled.</li>
-<li>“Block all cookies” is turned on.</li>
-<li>A privacy/ads extension is blocking storage.</li>
-<li>The browser is set to clear cookies on exit.</li>
-</ul>
-<div class="cookie-actions">
-<button id="allow-cookies" type="button">Allow Cookies</button>
-</div>
-<p id="cookie-status" class="cookie-status" hidden></p>
-<p id="cookie-error" class="cookie-error" hidden>
-Cookies are still blocked. Please enable them in your browser settings.
-</p>
-<p id="cookie-limit" class="cookie-error" hidden>
-The site has reached the 1,000,000 user limit.
-</p>
-</div>
-</div>
+            <g id="snakeHead" pointer-events="none">
+              <ellipse id="headShape" cx="0" cy="0" rx="16" ry="11"></ellipse>
 
-<script src="/app.js"></script>
+              <circle cx="6" cy="-4" r="2" fill="#000"></circle>
+              <circle cx="6" cy="4" r="2" fill="#000"></circle>
+
+              <path id="tongue"
+                d="M 12.5 0 L 17.5 0
+                   M 17.5 0 L 22 -3
+                   M 17.5 0 L 22 3"
+                stroke="#c00" stroke-width="2" stroke-linecap="round" fill="none"></path>
+            </g>
+
+            <path id="orbitMeasure"
+              d="M 132 11 a 121 121 0 1 1 0 242 a 121 121 0 1 1 0 -242"
+              fill="none" stroke="none"></path>
+          </svg>
+
+          <div class="countdown-core" id="countdown-core">
+            <span id="countdown-value">60</span>
+          </div>
+        </button>
+      </div>
+    </section>
+
+    <section class="view" data-view="guide" hidden></section>
+    <section class="view" data-view="more" hidden></section>
+  </main>
+
+  <div id="cookie-modal" class="cookie-modal" aria-hidden="true">
+    <div class="cookie-card" role="dialog" aria-live="assertive">
+      <h1>Cookie Permission Needed</h1>
+      <p>
+        This site needs cookies to work. If cookies are blocked, the site cannot be used.
+      </p>
+      <p>Common reasons cookies might not work:</p>
+      <ul>
+        <li>Cookies are turned off in browser settings.</li>
+        <li>Private/Incognito mode is enabled.</li>
+        <li>“Block all cookies” is turned on.</li>
+        <li>A privacy/ads extension is blocking storage.</li>
+        <li>The browser is set to clear cookies on exit.</li>
+      </ul>
+      <div class="cookie-actions">
+        <button id="allow-cookies" type="button">Allow Cookies</button>
+      </div>
+      <p id="cookie-status" class="cookie-status" hidden></p>
+      <p id="cookie-error" class="cookie-error" hidden>
+        Cookies are still blocked. Please enable them in your browser settings.
+      </p>
+      <p id="cookie-limit" class="cookie-error" hidden>
+        The site has reached the 1,000,000 user limit.
+      </p>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
 </body>
 </html>
