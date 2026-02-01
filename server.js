@@ -13,6 +13,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_CLIENTS = 1_000_000;
 const COOKIE_NAME = "client_token";
+const NIST_URL = "https://time.gov/actualtime.cgi";
+const NIST_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const PAYOUT_CYCLE_SECONDS = 3600;
+const PAYOUT_TICK_SECONDS = PAYOUT_CYCLE_SECONDS + 1;
 
 app.use(express.json());
 app.use(cookieParser());
@@ -36,15 +40,73 @@ const memoryStore = {
 
 const sseClients = new Set();
 let countdownEndAt = Date.now() + 60_000;
+let nistOffsetMs = 0;
+let deploymentStartNistMs = Date.now();
+let hasNistSync = false;
 
 const getRemainingSeconds = () => {
   const remainingMs = countdownEndAt - Date.now();
   return Math.max(0, Math.ceil(remainingMs / 1000));
 };
 
+const normalizeNistMs = (rawValue) => {
+  if (!rawValue) return null;
+  const trimmed = String(rawValue).trim();
+  if (!/^\d{10,}$/.test(trimmed)) return null;
+  if (trimmed.length === 10) return Number(trimmed) * 1000;
+  if (trimmed.length > 13) return Number(trimmed.slice(0, 13));
+  return Number(trimmed);
+};
+
+const fetchNistTimestamp = async () => {
+  const response = await fetch(`${NIST_URL}?cacheBust=${Date.now()}`, {
+    headers: { "Cache-Control": "no-cache" }
+  });
+  if (!response.ok) {
+    throw new Error(`NIST fetch failed: ${response.status}`);
+  }
+  const text = await response.text();
+  const match = text.match(/"time"\s*:\s*"?(\d{10,})"?/);
+  const nistMs = normalizeNistMs(match ? match[1] : null);
+  if (!nistMs) {
+    throw new Error("NIST time parse failed");
+  }
+  return nistMs;
+};
+
+const syncNistTime = async () => {
+  try {
+    const nistMs = await fetchNistTimestamp();
+    nistOffsetMs = nistMs - Date.now();
+    if (!hasNistSync) {
+      deploymentStartNistMs += nistOffsetMs;
+    }
+    hasNistSync = true;
+  } catch (error) {
+    console.warn("NIST sync failed, using local time.", error?.message || error);
+  }
+};
+
+const getNistNowMs = () => Date.now() + nistOffsetMs;
+
+const getPayoutRemainingSeconds = () => {
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((getNistNowMs() - deploymentStartNistMs) / 1000)
+  );
+  const offset = elapsedSeconds % PAYOUT_TICK_SECONDS;
+  return PAYOUT_CYCLE_SECONDS - offset;
+};
+
 const broadcastCountdown = () => {
   const remaining = getRemainingSeconds();
-  const payload = `data: ${JSON.stringify({ remaining, endsAt: countdownEndAt })}\n\n`;
+  const payoutRemaining = hasNistSync ? getPayoutRemainingSeconds() : null;
+  const payload = `data: ${JSON.stringify({
+    remaining,
+    endsAt: countdownEndAt,
+    payoutRemaining,
+    nistReady: hasNistSync
+  })}\n\n`;
   for (const res of sseClients) {
     res.write(payload);
   }
@@ -126,7 +188,12 @@ app.get("/events", (req, res) => {
   res.flushHeaders();
 
   sseClients.add(res);
-  const initial = { remaining: getRemainingSeconds(), endsAt: countdownEndAt };
+  const initial = {
+    remaining: getRemainingSeconds(),
+    endsAt: countdownEndAt,
+    payoutRemaining: hasNistSync ? getPayoutRemainingSeconds() : null,
+    nistReady: hasNistSync
+  };
   res.write(`data: ${JSON.stringify(initial)}\n\n`);
 
   req.on("close", () => {
@@ -186,3 +253,6 @@ app.get("*", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+syncNistTime();
+setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
