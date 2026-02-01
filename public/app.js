@@ -1,118 +1,217 @@
-/* ================== DOM REFERENCES (FIX) ================== */
-const orbitMeasure = document.getElementById("orbit-measure");
-const snakeBody = document.getElementById("snake-body");
-const snakeHead = document.getElementById("snake-head");
-const snakeHeadShape = document.getElementById("snake-head-shape");
+// public/app.js
+
 const countdownButton = document.getElementById("countdown-button");
 const countdownValue = document.getElementById("countdown-value");
-const countdownCore = document.querySelector(".countdown-core");
+const ringForeground = document.querySelector(".countdown-ring-fg");
+const cookieModal = document.getElementById("cookie-modal");
+const allowCookiesButton = document.getElementById("allow-cookies");
+const cookieStatus = document.getElementById("cookie-status");
+const cookieError = document.getElementById("cookie-error");
+const cookieLimit = document.getElementById("cookie-limit");
 
-/* ================== STATE ================== */
-let animationFrame = null;
-let isFinished = false;
-
+let hasConsent = false;
 const countdownSeconds = 60;
-let endsAtMs = performance.now() + countdownSeconds * 1000;
-let lastServerRemainingInt = null;
+let lastServerRemaining = countdownSeconds;
+let lastServerTime = 0;
+let lastServerEndsAt = 0;
+let animationFrame = null;
+let ringCircumference = 0;
+const clickBoostDuration = 1000;
+let clickBoostEndsAt = 0;
 
-/* ================== SNAKE CONFIG ================== */
-let orbitLength = 0;
-const segEls = [];
-const SEGMENTS = 30;
-const END_GAP = 10;
-const SEG_OVERLAP = 10;
-const SHELL_SIZE = 22;
-const BODY_BASE = SHELL_SIZE * 0.78;
-const TAIL_SCALE = 0.42;
-const HEAD_SCALE = 1.0;
+if (ringForeground) {
+const radius = ringForeground.r.baseVal.value;
+ringCircumference = 2 * Math.PI * radius;
+ringForeground.style.strokeDasharray = `${ringCircumference} ${ringCircumference}`;
+ringForeground.style.strokeDashoffset = "0";
+}
 
-/* ================== INIT SNAKE ================== */
-const initSnakeSegments = () => {
-  if (!orbitMeasure || !snakeBody) return;
-
-  orbitLength = orbitMeasure.getTotalLength();
-
-  for (let i = 0; i < SEGMENTS; i++) {
-    const seg = document.createElementNS("http://www.w3.org/2000/svg", "use");
-    seg.setAttribute("href", "#orbit");
-    seg.setAttribute("class", "body-seg");
-    seg.style.opacity = "0";
-    snakeBody.appendChild(seg);
-    segEls.push(seg);
-  }
+const setCookieStatus = (message, { show = true } = {}) => {
+cookieStatus.textContent = message;
+cookieStatus.hidden = !show;
 };
 
-initSnakeSegments();
-
-/* ================== HELPERS ================== */
-const getSmoothRemaining = () => {
-  return Math.max(0, (endsAtMs - performance.now()) / 1000);
+const setConsentState = (granted) => {
+document.body.classList.toggle("has-consent", granted);
 };
 
-const setCountdownText = (value) => {
-  if (!countdownValue) return;
-  countdownValue.textContent = String(value);
+const showCookieModal = () => {
+setConsentState(false);
+cookieModal.classList.add("is-visible");
+cookieModal.setAttribute("aria-hidden", "false");
 };
 
-/* ================== HEAD POSITION ================== */
-const setHeadAtLength = (length) => {
-  if (!orbitMeasure || !snakeHead || !orbitLength) return;
-
-  const pos = ((length % orbitLength) + orbitLength) % orbitLength;
-  const p = orbitMeasure.getPointAtLength(pos);
-  const p2 = orbitMeasure.getPointAtLength((pos + 1) % orbitLength);
-  const angle = Math.atan2(p2.y - p.y, p2.x - p.x) * 180 / Math.PI;
-
-  snakeHead.setAttribute(
-    "transform",
-    `translate(${p.x} ${p.y}) rotate(${angle})`
-  );
+const hideCookieModal = () => {
+setConsentState(true);
+cookieModal.classList.remove("is-visible");
+cookieModal.setAttribute("aria-hidden", "true");
+cookieError.hidden = true;
+cookieLimit.hidden = true;
+cookieStatus.hidden = true;
 };
 
-/* ================== RENDER SNAKE ================== */
-const renderSnake = (progress01) => {
-  if (!orbitLength || !snakeHeadShape) return;
-
-  const headPos = progress01 * orbitLength;
-  const targetBodyLen = Math.min(headPos, orbitLength - END_GAP);
-  const segLen = targetBodyLen / SEGMENTS;
-
-  setHeadAtLength(headPos);
-
-  segEls.forEach((seg, i) => {
-    const segStart = i * segLen;
-    let len = Math.max(0, Math.min(segLen + SEG_OVERLAP, targetBodyLen - segStart));
-
-    if (len <= 0) {
-      seg.style.opacity = "0";
-      return;
-    }
-
-    const t = i / (SEGMENTS - 1);
-    const w = BODY_BASE * (TAIL_SCALE + t * (HEAD_SCALE - TAIL_SCALE));
-
-    seg.style.strokeWidth = String(w);
-    seg.style.strokeDasharray = `${len} ${orbitLength}`;
-    seg.style.strokeDashoffset = `${-segStart}`;
-    seg.style.opacity = "1";
-  });
+const checkConsent = async () => {
+try {
+const response = await fetch("/api/me");
+if (!response.ok) {
+throw new Error("status");
+}
+const data = await response.json();
+if (!data.hasId) {
+showCookieModal();
+setCookieStatus("No cookie ID detected yet. Tap “Allow Cookies” to create one.");
+return false;
+}
+hasConsent = true;
+hideCookieModal();
+return true;
+} catch (error) {
+showCookieModal();
+setCookieStatus("Unable to reach the server. Please try again.");
+return false;
+}
 };
 
-/* ================== ANIMATION LOOP ================== */
-const tickUI = () => {
-  const smoothRemaining = getSmoothRemaining();
-  const displayRemaining = Math.ceil(smoothRemaining);
-  const progress = 1 - smoothRemaining / countdownSeconds;
-
-  setCountdownText(displayRemaining);
-  renderSnake(progress);
-
-  if (!isFinished && displayRemaining <= 0) {
-    isFinished = true;
-    countdownButton?.classList.add("is-finished");
-  }
-
-  animationFrame = requestAnimationFrame(tickUI);
+const requestConsent = async () => {
+cookieError.hidden = true;
+cookieLimit.hidden = true;
+setCookieStatus("Requesting cookie consent…");
+try {
+const response = await fetch("/api/consent", { method: "POST" });
+if (response.status === 403) {
+cookieLimit.hidden = false;
+setCookieStatus("The 1,000,000 user limit has been reached.");
+return;
+}
+if (!response.ok) {
+cookieError.hidden = false;
+setCookieStatus("Cookie request failed. Please try again.");
+return;
+}
+await checkConsent();
+if (!hasConsent) {
+cookieError.hidden = false;
+}
+} catch (error) {
+cookieError.hidden = false;
+setCookieStatus("Network error. Please try again.");
+}
 };
 
-tickUI();
+allowCookiesButton.addEventListener("click", requestConsent);
+
+const updateShakeState = (remaining) => {
+countdownButton.classList.remove("shake-subtle", "shake-medium", "shake-heavy");
+if (remaining <= 0 || remaining >= 31) {
+return;
+}
+if (remaining <= 5) {
+countdownButton.classList.add("shake-heavy");
+} else if (remaining <= 15) {
+countdownButton.classList.add("shake-medium");
+} else if (remaining <= 30) {
+countdownButton.classList.add("shake-subtle");
+}
+};
+
+const updateShellState = (remaining) => {
+if (!ringForeground || !ringCircumference) {
+return;
+}
+const clamped = Math.max(0, Math.min(countdownSeconds, remaining));
+const progress = Math.min(1, clamped / countdownSeconds);
+const hue = Math.round(120 * progress);
+const dash = ringCircumference * progress;
+ringForeground.style.strokeDasharray = `${dash} ${ringCircumference}`;
+countdownButton.style.setProperty("--shell-hue", hue.toString());
+};
+
+const getBoostedDisplayValue = (remaining) => {
+if (remaining <= 0) {
+return 0;
+}
+if (clickBoostEndsAt && performance.now() < clickBoostEndsAt) {
+return countdownSeconds;
+}
+return Math.ceil(remaining);
+};
+
+const renderFrame = () => {
+if (!lastServerTime) {
+animationFrame = requestAnimationFrame(renderFrame);
+return;
+}
+const now = Date.now();
+const remaining = lastServerEndsAt
+? Math.max(0, (lastServerEndsAt - now) / 1000)
+: Math.max(0, lastServerRemaining - (performance.now() - lastServerTime) / 1000);
+
+const boostedRemaining =
+clickBoostEndsAt && performance.now() < clickBoostEndsAt
+? countdownSeconds
+: remaining;
+
+const displayValue = getBoostedDisplayValue(remaining);
+countdownValue.textContent = displayValue;
+countdownButton.disabled = remaining <= 0;
+updateShellState(boostedRemaining);
+updateShakeState(displayValue);
+animationFrame = requestAnimationFrame(renderFrame);
+};
+
+const connectEvents = () => {
+const events = new EventSource("/events");
+events.onmessage = (event) => {
+const data = JSON.parse(event.data);
+lastServerRemaining = data.remaining;
+lastServerEndsAt = data.endsAt ?? 0;
+lastServerTime = performance.now();
+if (!animationFrame) {
+animationFrame = requestAnimationFrame(renderFrame);
+}
+};
+};
+
+countdownButton.addEventListener("click", async () => {
+if (!hasConsent) {
+showCookieModal();
+return;
+}
+if (countdownButton.disabled) {
+return;
+}
+clickBoostEndsAt = performance.now() + clickBoostDuration;
+await fetch("/api/click", { method: "POST" });
+});
+
+/* Router: URL changes, no reload */
+const setView = (name) => {
+document.querySelectorAll(".view").forEach((v) => {
+v.hidden = v.dataset.view !== name;
+});
+};
+
+const routeFromPath = (pathname) => {
+if (pathname === "/guide") return "guide";
+if (pathname === "/more") return "more";
+return "home";
+};
+
+const navigate = (path) => {
+history.pushState({}, "", path);
+setView(routeFromPath(location.pathname));
+};
+
+document.addEventListener("click", (e) => {
+const a = e.target.closest("a[data-route]");
+if (!a) return;
+e.preventDefault();
+navigate(a.getAttribute("href") || "/");
+});
+
+window.addEventListener("popstate", () => {
+setView(routeFromPath(location.pathname));
+});
+
+setView(routeFromPath(location.pathname));
+checkConsent().then(connectEvents);
