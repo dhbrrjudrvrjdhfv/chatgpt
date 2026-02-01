@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import path from "path";
+import net from "net";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -13,7 +14,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_CLIENTS = 1_000_000;
 const COOKIE_NAME = "client_token";
-const NIST_URL = "https://time.gov/actualtime.cgi";
+const NIST_URLS = [
+  "https://time.gov/actualtime.cgi",
+  "https://time.nist.gov/actualtime.cgi"
+];
+const NIST_DAYTIME_SERVERS = [
+  "time.nist.gov",
+  "time-a.nist.gov",
+  "time-b.nist.gov",
+  "time-a-b.nist.gov",
+  "time-b-b.nist.gov"
+];
 const NIST_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const PAYOUT_CYCLE_SECONDS = 3600;
 const PAYOUT_TICK_SECONDS = PAYOUT_CYCLE_SECONDS + 1;
@@ -58,20 +69,90 @@ const normalizeNistMs = (rawValue) => {
   return Number(trimmed);
 };
 
+const parseNistDaytime = (payload) => {
+  const match = payload.match(/(\d{2})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (!match) return null;
+  const [, yy, mm, dd, hh, min, ss] = match;
+  const year = 2000 + Number(yy);
+  return Date.UTC(year, Number(mm) - 1, Number(dd), Number(hh), Number(min), Number(ss));
+};
+
+const fetchNistDaytimeTimestamp = async () => {
+  const errors = [];
+  for (const host of NIST_DAYTIME_SERVERS) {
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const socket = net.createConnection({ host, port: 13 });
+        const timeoutId = setTimeout(() => {
+          socket.destroy();
+          reject(new Error("timeout"));
+        }, 5000);
+
+        let buffer = "";
+
+        socket.on("data", (chunk) => {
+          buffer += chunk.toString("utf8");
+          if (buffer.includes("\n")) {
+            socket.end();
+          }
+        });
+
+        socket.on("end", () => {
+          clearTimeout(timeoutId);
+          resolve(buffer.trim());
+        });
+
+        socket.on("error", (error) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        });
+      });
+
+      const nistMs = parseNistDaytime(result);
+      if (!nistMs) {
+        errors.push(`${host} parse`);
+        continue;
+      }
+      return nistMs;
+    } catch (error) {
+      errors.push(`${host} ${error?.message || error}`);
+    }
+  }
+  throw new Error(`NIST daytime failed: ${errors.join("; ")}`);
+};
+
 const fetchNistTimestamp = async () => {
-  const response = await fetch(`${NIST_URL}?cacheBust=${Date.now()}`, {
-    headers: { "Cache-Control": "no-cache" }
-  });
-  if (!response.ok) {
-    throw new Error(`NIST fetch failed: ${response.status}`);
+  const errors = [];
+  for (const baseUrl of NIST_URLS) {
+    try {
+      const response = await fetch(`${baseUrl}?cacheBust=${Date.now()}`, {
+        headers: {
+          "Cache-Control": "no-cache",
+          "User-Agent": "Mozilla/5.0"
+        }
+      });
+      if (!response.ok) {
+        errors.push(`${baseUrl} ${response.status}`);
+        continue;
+      }
+      const text = await response.text();
+      const match = text.match(/"time"\s*:\s*"?(\d{10,})"?/);
+      const nistMs = normalizeNistMs(match ? match[1] : null);
+      if (!nistMs) {
+        errors.push(`${baseUrl} parse`);
+        continue;
+      }
+      return nistMs;
+    } catch (error) {
+      errors.push(`${baseUrl} ${error?.message || error}`);
+    }
   }
-  const text = await response.text();
-  const match = text.match(/"time"\s*:\s*"?(\d{10,})"?/);
-  const nistMs = normalizeNistMs(match ? match[1] : null);
-  if (!nistMs) {
-    throw new Error("NIST time parse failed");
+  try {
+    return await fetchNistDaytimeTimestamp();
+  } catch (error) {
+    errors.push(error?.message || error);
   }
-  return nistMs;
+  throw new Error(`NIST fetch failed: ${errors.join("; ")}`);
 };
 
 const syncNistTime = async () => {
