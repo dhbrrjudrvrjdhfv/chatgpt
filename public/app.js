@@ -4,6 +4,7 @@ const countdownButton = document.getElementById("countdown-button");
 const countdownValue = document.getElementById("countdown-value");
 const coreEl = document.getElementById("countdown-core");
 const payoutTimer = document.getElementById("payout-timer");
+const visitsTodayEl = document.getElementById("visits-today");
 
 const cookieModal = document.getElementById("cookie-modal");
 const allowCookiesButton = document.getElementById("allow-cookies");
@@ -36,6 +37,15 @@ const updatePayoutTimer = (remainingSeconds, isReady) => {
     return;
   }
   payoutTimer.textContent = formatHms(remainingSeconds);
+};
+
+const updateVisitsToday = (visitsToday, nistReady) => {
+  if (!visitsTodayEl) return;
+  if (!nistReady || visitsToday === null || visitsToday === undefined) {
+    visitsTodayEl.textContent = "LOADING";
+    return;
+  }
+  visitsTodayEl.textContent = String(visitsToday);
 };
 
 // ===== consent =====
@@ -73,15 +83,21 @@ const checkConsent = async () => {
     if (!data.hasId) {
       showCookieModal();
       setCookieStatus("No cookie ID detected yet. Tap “Allow Cookies” to create one.");
+      updateVisitsToday(null, false);
       return false;
     }
 
     hasConsent = true;
     hideCookieModal();
+
+    // Visits Today is only for consented users; show LOADING until NIST is ready.
+    updateVisitsToday(data.visitsToday, data.visitsToday !== null);
+
     return true;
   } catch {
     showCookieModal();
     setCookieStatus("Unable to reach the server. Please try again.");
+    updateVisitsToday(null, false);
     return false;
   }
 };
@@ -289,6 +305,7 @@ const connectEvents = () => {
 
     lastEndsAt = data.endsAt || 0;
     updatePayoutTimer(data.payoutRemaining, data.nistReady);
+    updateVisitsToday(data.visitsToday, data.nistReady);
 
     // Re-enable visuals when server resets (>0)
     if (data.remaining > 0) {
