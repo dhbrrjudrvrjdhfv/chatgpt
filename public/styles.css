@@ -7,7 +7,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f5f5f5;
+  background: #BFBFBF;
 }
 
 /* Keep main hidden until consent, but header stays visible */
@@ -138,6 +138,31 @@ body:not(.has-consent) .page {
   justify-content: center;
   width: 100%;
   min-height: calc(100vh - 170px);
+}
+
+/* NEW: symmetric layout for home view */
+.home-layout {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 48px;
+  padding: 0 64px;
+  box-sizing: border-box;
+}
+
+.side-box {
+  background: #fff;
+  width: clamp(220px, 24vw, 460px);
+  height: clamp(280px, 56vh, 560px);
+  flex: 0 0 auto;
+}
+
+.center-slot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .button-wrapper {
@@ -349,7 +374,7 @@ svg {
 }
 
 @media (prefers-color-scheme: dark) {
-  body { background: #0b0b0b; }
+  body { background: #BFBFBF; }
 
   /* header remains white */
 
