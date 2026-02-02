@@ -1,4 +1,3 @@
-<!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -32,48 +31,54 @@
         </div>
 
         <!-- Row 2 / Col 3 -->
-        <div class="visits-count" id="visits-today">LOADING</div>
+        <div class="visits-count">XXXX</div>
       </div>
     </div>
   </header>
 
   <main class="page">
     <section class="view" data-view="home">
-      <div class="button-wrapper">
-        <button id="countdown-button" class="countdown-button" type="button" aria-label="Ouroboros countdown">
-          <svg class="countdown-ring" viewBox="0 0 264 264" aria-hidden="true">
-            <defs>
-              <path id="orbit"
-                d="M 132 11
-                   a 121 121 0 1 1 0 242
-                   a 121 121 0 1 1 0 -242" />
-            </defs>
+      <div class="home-layout">
+        <div class="side-box" aria-hidden="true"></div>
 
-            <circle class="ring-bg" cx="132" cy="132" r="121"></circle>
-            <g id="body"></g>
+        <div class="center-slot">
+          <button id="countdown-button" class="countdown-button" type="button" aria-label="Ouroboros countdown">
+            <svg class="countdown-ring" viewBox="0 0 264 264" aria-hidden="true">
+              <defs>
+                <path id="orbit"
+                  d="M 132 11
+                     a 121 121 0 1 1 0 242
+                     a 121 121 0 1 1 0 -242" />
+              </defs>
 
-            <g id="snakeHead" pointer-events="none">
-              <ellipse id="headShape" cx="0" cy="0" rx="16" ry="11"></ellipse>
+              <circle class="ring-bg" cx="132" cy="132" r="121"></circle>
+              <g id="body"></g>
 
-              <circle cx="6" cy="-4" r="2" fill="#000"></circle>
-              <circle cx="6" cy="4" r="2" fill="#000"></circle>
+              <g id="snakeHead" pointer-events="none">
+                <ellipse id="headShape" cx="0" cy="0" rx="16" ry="11"></ellipse>
 
-              <path id="tongue"
-                d="M 12.5 0 L 17.5 0
-                   M 17.5 0 L 22 -3
-                   M 17.5 0 L 22 3"
-                stroke="#c00" stroke-width="2" stroke-linecap="round" fill="none"></path>
-            </g>
+                <circle cx="6" cy="-4" r="2" fill="#000"></circle>
+                <circle cx="6" cy="4" r="2" fill="#000"></circle>
 
-            <path id="orbitMeasure"
-              d="M 132 11 a 121 121 0 1 1 0 242 a 121 121 0 1 1 0 -242"
-              fill="none" stroke="none"></path>
-          </svg>
+                <path id="tongue"
+                  d="M 12.5 0 L 17.5 0
+                     M 17.5 0 L 22 -3
+                     M 17.5 0 L 22 3"
+                  stroke="#c00" stroke-width="2" stroke-linecap="round" fill="none"></path>
+              </g>
 
-          <div class="countdown-core" id="countdown-core">
-            <span id="countdown-value">60</span>
-          </div>
-        </button>
+              <path id="orbitMeasure"
+                d="M 132 11 a 121 121 0 1 1 0 242 a 121 121 0 1 1 0 -242"
+                fill="none" stroke="none"></path>
+            </svg>
+
+            <div class="countdown-core" id="countdown-core">
+              <span id="countdown-value">60</span>
+            </div>
+          </button>
+        </div>
+
+        <div class="side-box" aria-hidden="true"></div>
       </div>
     </section>
 
