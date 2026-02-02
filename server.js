@@ -60,6 +60,24 @@ const getRemainingSeconds = () => {
   return Math.max(0, Math.ceil(remainingMs / 1000));
 };
 
+const loadDeploymentStart = async () => {
+  if (!db) {
+    return;
+  }
+  const doc = await db.collection("meta").doc("deploymentStartNistMs").get();
+  if (doc.exists) {
+    deploymentStartNistMs = doc.data().value;
+  }
+};
+
+const persistDeploymentStart = async (value) => {
+  if (!db) return;
+  await db
+    .collection("meta")
+    .doc("deploymentStartNistMs")
+    .set({ value }, { merge: true });
+};
+
 const normalizeNistMs = (rawValue) => {
   if (!rawValue) return null;
   const trimmed = String(rawValue).trim();
@@ -161,6 +179,7 @@ const syncNistTime = async () => {
     nistOffsetMs = nistMs - Date.now();
     if (!deploymentStartNistMs) {
       deploymentStartNistMs = nistMs;
+      await persistDeploymentStart(deploymentStartNistMs);
     }
     hasNistSync = true;
   } catch (error) {
@@ -330,6 +349,17 @@ app.post("/api/click", async (req, res) => {
   return res.status(200).json({ remaining: getRemainingSeconds() });
 });
 
+app.post("/api/payout/reset", async (req, res) => {
+  const token = process.env.RESET_PAYOUT_TOKEN;
+  if (!token || req.headers["x-reset-token"] !== token) {
+    return res.status(403).json({ error: "FORBIDDEN" });
+  }
+  const nowMs = hasNistSync ? getNistNowMs() : Date.now();
+  deploymentStartNistMs = nowMs;
+  await persistDeploymentStart(deploymentStartNistMs);
+  return res.status(200).json({ resetAt: deploymentStartNistMs });
+});
+
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
@@ -338,5 +368,10 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-syncNistTime();
-setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
+const initializeNist = async () => {
+  await loadDeploymentStart();
+  await syncNistTime();
+  setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
+};
+
+initializeNist();
