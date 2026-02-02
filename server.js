@@ -52,12 +52,31 @@ const memoryStore = {
 const sseClients = new Set();
 let countdownEndAt = Date.now() + 60_000;
 let nistOffsetMs = 0;
-let deploymentStartNistMs = Date.now();
+let deploymentStartNistMs = null;
 let hasNistSync = false;
 
 const getRemainingSeconds = () => {
   const remainingMs = countdownEndAt - Date.now();
   return Math.max(0, Math.ceil(remainingMs / 1000));
+};
+
+const loadDeploymentStart = async () => {
+  if (!db) {
+    deploymentStartNistMs = Date.now();
+    return;
+  }
+  const doc = await db.collection("meta").doc("deploymentStartNistMs").get();
+  if (doc.exists) {
+    deploymentStartNistMs = doc.data().value;
+  }
+};
+
+const persistDeploymentStart = async (value) => {
+  if (!db) return;
+  await db
+    .collection("meta")
+    .doc("deploymentStartNistMs")
+    .set({ value }, { merge: true });
 };
 
 const normalizeNistMs = (rawValue) => {
@@ -159,8 +178,9 @@ const syncNistTime = async () => {
   try {
     const nistMs = await fetchNistTimestamp();
     nistOffsetMs = nistMs - Date.now();
-    if (!hasNistSync) {
-      deploymentStartNistMs += nistOffsetMs;
+    if (!deploymentStartNistMs) {
+      deploymentStartNistMs = nistMs;
+      await persistDeploymentStart(deploymentStartNistMs);
     }
     hasNistSync = true;
   } catch (error) {
@@ -171,6 +191,9 @@ const syncNistTime = async () => {
 const getNistNowMs = () => Date.now() + nistOffsetMs;
 
 const getPayoutRemainingSeconds = () => {
+  if (!deploymentStartNistMs) {
+    return PAYOUT_CYCLE_SECONDS;
+  }
   const elapsedSeconds = Math.max(
     0,
     Math.floor((getNistNowMs() - deploymentStartNistMs) / 1000)
@@ -335,5 +358,10 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-syncNistTime();
-setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
+const initializeNist = async () => {
+  await loadDeploymentStart();
+  await syncNistTime();
+  setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
+};
+
+initializeNist();
