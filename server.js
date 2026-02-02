@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import cookieParser from "cookie-parser";
 import { v4 as uuidv4 } from "uuid";
@@ -46,7 +47,8 @@ const memoryStore = {
   clientCounter: 0,
   clients: new Map(),
   clickCounts: new Map(),
-  clickEvents: []
+  clickEvents: [],
+  dailyVisits: new Map() // dayKey -> Set(clientId)
 };
 
 const sseClients = new Set();
@@ -54,6 +56,10 @@ let countdownEndAt = Date.now() + 60_000;
 let nistOffsetMs = 0;
 let deploymentStartNistMs = null;
 let hasNistSync = false;
+
+// Visits Today cache (unique server id per NIST day)
+let visitsDayKeyCache = null;
+let visitsTodayCache = null; // null => LOADING / not ready
 
 const getRemainingSeconds = () => {
   const remainingMs = countdownEndAt - Date.now();
@@ -201,14 +207,121 @@ const getPayoutRemainingSeconds = () => {
   return PAYOUT_CYCLE_SECONDS - offset;
 };
 
+// ===== Visits Today (unique server id per NIST day) =====
+
+const getNistDayKey = () => {
+  if (!hasNistSync) return null;
+  return new Date(getNistNowMs()).toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+};
+
+const refreshVisitsTodayCacheIfNeeded = () => {
+  if (!hasNistSync) {
+    visitsDayKeyCache = null;
+    visitsTodayCache = null;
+    return;
+  }
+
+  const dayKey = getNistDayKey();
+  if (!dayKey) {
+    visitsDayKeyCache = null;
+    visitsTodayCache = null;
+    return;
+  }
+
+  if (visitsDayKeyCache === dayKey && visitsTodayCache !== null) return;
+
+  // Day changed or cache empty => reset and (if Firestore) load actual count
+  visitsDayKeyCache = dayKey;
+  visitsTodayCache = 0;
+
+  if (!db) {
+    const set = memoryStore.dailyVisits.get(dayKey);
+    visitsTodayCache = set ? set.size : 0;
+    return;
+  }
+
+  // Fire-and-forget load of current count
+  db.collection("dailyVisits")
+    .doc(dayKey)
+    .get()
+    .then((doc) => {
+      if (!doc.exists) {
+        visitsTodayCache = 0;
+        return;
+      }
+      const count = doc.data()?.count;
+      visitsTodayCache = typeof count === "number" ? count : 0;
+    })
+    .catch(() => {
+      // keep existing cache
+    });
+};
+
+const markVisitToday = async (clientId) => {
+  if (!hasNistSync) return null;
+
+  const dayKey = getNistDayKey();
+  if (!dayKey) return null;
+
+  // Ensure cache is aligned to today
+  if (visitsDayKeyCache !== dayKey) {
+    visitsDayKeyCache = dayKey;
+    visitsTodayCache = 0;
+  }
+
+  if (!db) {
+    let set = memoryStore.dailyVisits.get(dayKey);
+    if (!set) {
+      set = new Set();
+      memoryStore.dailyVisits.set(dayKey, set);
+    }
+    const before = set.size;
+    set.add(String(clientId));
+    const after = set.size;
+    visitsTodayCache = after;
+    return after; // unique count
+  }
+
+  const dailyRef = db.collection("dailyVisits").doc(dayKey);
+  const visitorRef = dailyRef.collection("visitors").doc(String(clientId));
+
+  const newCount = await db.runTransaction(async (transaction) => {
+    const [dailySnap, visitorSnap] = await Promise.all([
+      transaction.get(dailyRef),
+      transaction.get(visitorRef)
+    ]);
+
+    const currentCount = dailySnap.exists && typeof dailySnap.data()?.count === "number"
+      ? dailySnap.data().count
+      : 0;
+
+    if (visitorSnap.exists) {
+      return currentCount;
+    }
+
+    transaction.set(visitorRef, { seenAt: FieldValue.serverTimestamp() }, { merge: true });
+    const nextCount = currentCount + 1;
+    transaction.set(dailyRef, { count: nextCount }, { merge: true });
+    return nextCount;
+  });
+
+  visitsTodayCache = typeof newCount === "number" ? newCount : visitsTodayCache;
+  return visitsTodayCache;
+};
+
+// ===== SSE =====
+
 const broadcastCountdown = () => {
+  refreshVisitsTodayCacheIfNeeded();
+
   const remaining = getRemainingSeconds();
   const payoutRemaining = hasNistSync ? getPayoutRemainingSeconds() : null;
   const payload = `data: ${JSON.stringify({
     remaining,
     endsAt: countdownEndAt,
     payoutRemaining,
-    nistReady: hasNistSync
+    nistReady: hasNistSync,
+    visitsToday: hasNistSync ? visitsTodayCache : null
   })}\n\n`;
   for (const res of sseClients) {
     res.write(payload);
@@ -260,13 +373,19 @@ const assignClientId = async (token) => {
 app.get("/api/me", async (req, res) => {
   const token = req.cookies[COOKIE_NAME];
   if (!token) {
-    return res.status(200).json({ hasId: false });
+    return res.status(200).json({ hasId: false, visitsToday: null });
   }
   const id = await getClientId(token);
   if (!id) {
-    return res.status(200).json({ hasId: false });
+    return res.status(200).json({ hasId: false, visitsToday: null });
   }
-  return res.status(200).json({ hasId: true, id });
+
+  let visitsToday = null;
+  if (hasNistSync) {
+    visitsToday = await markVisitToday(id);
+  }
+
+  return res.status(200).json({ hasId: true, id, visitsToday });
 });
 
 app.post("/api/consent", async (req, res) => {
@@ -291,11 +410,15 @@ app.get("/events", (req, res) => {
   res.flushHeaders();
 
   sseClients.add(res);
+
+  refreshVisitsTodayCacheIfNeeded();
+
   const initial = {
     remaining: getRemainingSeconds(),
     endsAt: countdownEndAt,
     payoutRemaining: hasNistSync ? getPayoutRemainingSeconds() : null,
-    nistReady: hasNistSync
+    nistReady: hasNistSync,
+    visitsToday: hasNistSync ? visitsTodayCache : null
   };
   res.write(`data: ${JSON.stringify(initial)}\n\n`);
 
