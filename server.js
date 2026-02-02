@@ -60,25 +60,6 @@ const getRemainingSeconds = () => {
   return Math.max(0, Math.ceil(remainingMs / 1000));
 };
 
-const loadDeploymentStart = async () => {
-  if (!db) {
-    deploymentStartNistMs = Date.now();
-    return;
-  }
-  const doc = await db.collection("meta").doc("deploymentStartNistMs").get();
-  if (doc.exists) {
-    deploymentStartNistMs = doc.data().value;
-  }
-};
-
-const persistDeploymentStart = async (value) => {
-  if (!db) return;
-  await db
-    .collection("meta")
-    .doc("deploymentStartNistMs")
-    .set({ value }, { merge: true });
-};
-
 const normalizeNistMs = (rawValue) => {
   if (!rawValue) return null;
   const trimmed = String(rawValue).trim();
@@ -180,7 +161,6 @@ const syncNistTime = async () => {
     nistOffsetMs = nistMs - Date.now();
     if (!deploymentStartNistMs) {
       deploymentStartNistMs = nistMs;
-      await persistDeploymentStart(deploymentStartNistMs);
     }
     hasNistSync = true;
   } catch (error) {
@@ -358,10 +338,5 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-const initializeNist = async () => {
-  await loadDeploymentStart();
-  await syncNistTime();
-  setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
-};
-
-initializeNist();
+syncNistTime();
+setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
