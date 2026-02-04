@@ -40,19 +40,24 @@ outline: none;
 }
 
 .header-inner {
-padding: 24px 18px 32px;
+padding: 24px 18px 32px; /* taller header */
 box-sizing: border-box;
 }
 
+/* 2 rows × 3 columns:
+(Guide/More) | (Logo) | (Visits Today)
+(blank) | (Payout) | (XXXX)
+*/
 .header-grid {
 display: grid;
-grid-template-columns: 1fr auto 1fr;
+grid-template-columns: 1fr auto 1fr; /* logo dead center */
 grid-template-rows: auto auto;
 align-items: center;
 column-gap: 0;
-row-gap: 22px;
+row-gap: 22px; /* distance between top row and bottom row */
 }
 
+/* Left top */
 .header-left {
 grid-column: 1;
 grid-row: 1;
@@ -75,6 +80,7 @@ cursor: pointer;
 text-decoration: none;
 }
 
+/* Center top */
 .header-logo {
 grid-column: 2;
 grid-row: 1;
@@ -91,21 +97,24 @@ cursor: pointer;
 text-decoration: none;
 }
 
+/* Right top: Visits Today (positioned between logo and right edge) */
 .visits-label {
 grid-column: 3;
 grid-row: 1;
-justify-self: center;
+justify-self: center; /* this is the “middle of the right section” */
 color: #000;
 white-space: nowrap;
 font-weight: 700;
 cursor: default;
 }
 
+/* Row 2 / Col 1 spacer */
 .header-left-spacer {
 grid-column: 1;
 grid-row: 2;
 }
 
+/* Center bottom: payout under logo */
 .payout-line {
 grid-column: 2;
 grid-row: 2;
@@ -116,10 +125,11 @@ font-weight: 700;
 cursor: default;
 }
 
+/* Right bottom: XXXX under Visits Today (same column, same justify-self) */
 .visits-count {
 grid-column: 3;
 grid-row: 2;
-justify-self: center;
+justify-self: center; /* ties under Visits Today, not under payout */
 color: #000;
 white-space: nowrap;
 font-weight: 700;
@@ -128,44 +138,57 @@ cursor: default;
 
 /* ================= MAIN ================= */
 
-/* GRAY / ORANGE AREA — authoritative container */
 .page {
-display: grid;
+/* orange area: equal padding from header-bottom / viewport sides / viewport bottom */
+display: flex;
+align-items: stretch;
+justify-content: center;
 width: 100%;
 min-height: calc(100vh - 170px);
-}
-
-/* 🔑 FIX: the view must fill the page */
-.page > .view {
-width: 100%;
-height: 100%;
-}
-
-/* 🔑 FIX: true 3-region spatial layout */
-.home-layout {
-display: grid;
-grid-template-columns: 1fr auto 1fr;
-align-items: stretch;
-width: 100%;
-height: 100%;
-padding: 0 64px;
+height: calc(100vh - 170px);
+padding: 48px;
 box-sizing: border-box;
 }
 
-/* White boxes = side regions */
-.side-box {
-background: #fff;
+/* critical: make the active view actually fill the page area */
+.page > .view {
+flex: 1 1 auto;
+width: 100%;
 height: 100%;
 }
 
-/* Center button region */
+/* layout must allocate real side columns: 1fr | auto | 1fr */
+.home-layout {
+width: 100%;
+height: 100%;
+display: grid;
+grid-template-columns: 1fr auto 1fr;
+align-items: stretch;
+gap: 96px;
+box-sizing: border-box;
+}
+
+/* white boxes must fill their 1fr columns and full height */
+.side-box {
+background: #fff;
+width: 100%;
+height: 100%;
+}
+
+/* keep button dead-center */
 .center-slot {
 display: flex;
 align-items: center;
 justify-content: center;
 }
 
-/* ================= COUNTDOWN BUTTON ================= */
+.button-wrapper {
+display: flex;
+align-items: center;
+justify-content: center;
+}
+
+/* ================= COUNTDOWN BUTTON (ouroboros) ================= */
 
 .countdown-button {
 --core-size: 220px;
@@ -174,6 +197,7 @@ justify-content: center;
 width: calc(var(--core-size) + (var(--shell-size) * 2));
 height: calc(var(--core-size) + (var(--shell-size) * 2));
 border-radius: 50%;
+
 background: transparent;
 border: none;
 padding: 0;
@@ -188,6 +212,8 @@ user-select: none;
 -webkit-user-select: none;
 caret-color: transparent;
 outline: none;
+
+transform: translate(0px, 0px) rotate(0deg);
 }
 
 .countdown-button:focus,
@@ -195,6 +221,7 @@ outline: none;
 outline: none;
 }
 
+/* When finished (remaining=0): disable interactions + default cursor */
 .countdown-button.is-finished {
 cursor: default;
 pointer-events: none;
@@ -222,6 +249,7 @@ z-index: 3;
 transition: background-color 120ms linear;
 }
 
+/* Core turns red at <= 10s and stays red at 0 */
 .countdown-core.is-danger {
 background: #ff2a2a;
 }
@@ -250,7 +278,7 @@ svg {
 shape-rendering: geometricPrecision;
 }
 
-/* ================= SHAKE ================= */
+/* ================= SHAKE (unchanged; not used) ================= */
 
 .shake-subtle {
 animation: shake-subtle 0.18s infinite;
@@ -265,30 +293,33 @@ animation: shake-heavy 0.1s infinite;
 }
 
 @keyframes shake-subtle {
-0%,100% { transform: translate(0,0); }
-20% { transform: translate(-0.5px,0.5px); }
-40% { transform: translate(0.6px,-0.4px); }
-60% { transform: translate(-0.4px,-0.5px); }
-80% { transform: translate(0.5px,0.4px); }
+0%,
+100% { transform: translate(0, 0); }
+20% { transform: translate(-0.5px, 0.5px); }
+40% { transform: translate(0.6px, -0.4px); }
+60% { transform: translate(-0.4px, -0.5px); }
+80% { transform: translate(0.5px, 0.4px); }
 }
 
 @keyframes shake-medium {
-0%,100% { transform: translate(0,0); }
-20% { transform: translate(-1px,1px); }
-40% { transform: translate(1.2px,-0.8px); }
-60% { transform: translate(-1px,-1px); }
-80% { transform: translate(0.8px,1px); }
+0%,
+100% { transform: translate(0, 0); }
+20% { transform: translate(-1px, 1px); }
+40% { transform: translate(1.2px, -0.8px); }
+60% { transform: translate(-1px, -1px); }
+80% { transform: translate(0.8px, 1px); }
 }
 
 @keyframes shake-heavy {
-0%,100% { transform: translate(0,0); }
-20% { transform: translate(-2px,2px); }
-40% { transform: translate(2.5px,-2px); }
-60% { transform: translate(-2.5px,-2px); }
-80% { transform: translate(2px,2.5px); }
+0%,
+100% { transform: translate(0, 0); }
+20% { transform: translate(-2px, 2px); }
+40% { transform: translate(2.5px, -2px); }
+60% { transform: translate(-2.5px, -2px); }
+80% { transform: translate(2px, 2.5px); }
 }
 
-/* ================= COOKIE MODAL ================= */
+/* ================= COOKIE MODAL (unchanged) ================= */
 
 .cookie-modal {
 position: fixed;
@@ -350,7 +381,7 @@ margin-top: 12px;
 color: #444;
 }
 
-/* ================= RESPONSIVE ================= */
+/* ================= RESPONSIVE (no wrapping; shrink instead) ================= */
 
 @media (max-width: 520px) {
 .site-header { font-size: 16px; }
@@ -361,6 +392,9 @@ color: #444;
 
 @media (prefers-color-scheme: dark) {
 body { background: #BFBFBF; }
+
+/* header remains white */
+
 .cookie-card { background: #1a1a1a; color: #fff; }
 .cookie-status,
 .cookie-note { color: #d0d0d0; }
