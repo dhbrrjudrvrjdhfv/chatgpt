@@ -142,8 +142,10 @@ body:not(.has-consent) .site-header {
   /* equal padding from header bottom / viewport edges / bottom */
   display: flex;
   justify-content: center;
+  align-items: stretch;
   width: 100%;
   min-height: calc(100vh - 170px);
+  height: calc(100vh - 170px);
   padding: 48px;
   box-sizing: border-box;
 }
