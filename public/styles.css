@@ -1,3 +1,4 @@
+/* styles.css */
 :root {
   color-scheme: light dark;
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -138,6 +139,7 @@ body:not(.has-consent) .page {
   justify-content: center;
   width: 100%;
   min-height: calc(100vh - 170px);
+  position: relative; /* NEW: harmless; keeps existing layout stable */
 }
 
 /* NEW: symmetric layout for home view */
@@ -159,6 +161,13 @@ body:not(.has-consent) .page {
 }
 
 .center-slot {
+  /* NEW: pixel-perfect viewport centering for the whole button */
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+
   flex: 0 0 auto;
   display: flex;
   align-items: center;
