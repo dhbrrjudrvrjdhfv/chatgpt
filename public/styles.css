@@ -154,15 +154,16 @@ body:not(.has-consent) .site-header {
   max-width: 1600px;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  align-items: center;
+  align-items: stretch;
   gap: 96px;
+  height: 100%;
 }
 
 /* CHANGED: resized boxes (still symmetric) */
 .side-box {
   background: #fff;
   width: clamp(260px, 22vw, 420px);
-  height: clamp(320px, 50vh, 520px);
+  height: 100%;
   flex: 0 0 auto;
 }
 
