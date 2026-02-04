@@ -16,6 +16,11 @@ body:not(.has-consent) .page {
   visibility: hidden;
 }
 
+/* NEW: hide header until consent */
+body:not(.has-consent) .site-header {
+  visibility: hidden;
+}
+
 /* ================= HEADER ================= */
 
 .site-header {
