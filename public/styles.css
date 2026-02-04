@@ -3,9 +3,6 @@
   color-scheme: light dark;
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
-
-  /* NEW: header height used for centering below header */
-  --header-height: 170px;
 }
 
 body {
@@ -137,11 +134,11 @@ body:not(.has-consent) .page {
 /* ================= MAIN ================= */
 
 .page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  /* CHANGED: grid-centers the home layout inside main area */
+  display: grid;
+  place-items: center;
   width: 100%;
-  min-height: calc(100vh - var(--header-height)); /* CHANGED: was 170px */
+  min-height: calc(100vh - 170px);
 }
 
 /* NEW: symmetric layout for home view */
@@ -163,13 +160,6 @@ body:not(.has-consent) .page {
 }
 
 .center-slot {
-  /* CHANGED: perfect centering in the area BELOW the header */
-  position: fixed;
-  left: 50%;
-  top: calc(var(--header-height) + (100vh - var(--header-height)) / 2);
-  transform: translate(-50%, -50%);
-  z-index: 10;
-
   flex: 0 0 auto;
   display: flex;
   align-items: center;
