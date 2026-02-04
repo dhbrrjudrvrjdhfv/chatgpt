@@ -139,28 +139,30 @@ body:not(.has-consent) .site-header {
 /* ================= MAIN ================= */
 
 .page {
-  /* CHANGED: grid-centers the home layout inside main area */
-  display: grid;
-  place-items: center;
+  /* CHANGED: equal padding from header bottom / viewport edges / bottom */
+  display: flex;
+  justify-content: center;
   width: 100%;
   min-height: calc(100vh - 170px);
-}
-
-/* NEW: symmetric layout for home view */
-.home-layout {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 48px;
-  padding: 0 64px;
+  padding: 48px;
   box-sizing: border-box;
 }
 
+/* CHANGED: symmetric layout for home view with more distance from button */
+.home-layout {
+  width: 100%;
+  max-width: 1600px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 96px;
+}
+
+/* CHANGED: resized boxes (still symmetric) */
 .side-box {
   background: #fff;
-  width: clamp(220px, 24vw, 460px);
-  height: clamp(280px, 56vh, 560px);
+  width: clamp(260px, 22vw, 420px);
+  height: clamp(320px, 50vh, 520px);
   flex: 0 0 auto;
 }
 
