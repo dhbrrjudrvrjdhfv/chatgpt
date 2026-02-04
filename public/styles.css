@@ -139,28 +139,40 @@ cursor: default;
 /* ================= MAIN ================= */
 
 .page {
-/* CHANGED: grid-centers the home layout inside main area */
-display: grid;
-place-items: center;
+/* Orange-bounds container: padded area below header */
+display: flex;
+justify-content: center;
+align-items: stretch;
 width: 100%;
 min-height: calc(100vh - 170px);
-}
-
-/* NEW: symmetric layout for home view */
-.home-layout {
-width: 100%;
-display: flex;
-align-items: center;
-justify-content: space-between;
-gap: 48px;
-padding: 0 64px;
+height: calc(100vh - 170px);
+padding: 48px;
 box-sizing: border-box;
 }
 
+/* Critical: give the view real size so children can use height:100% */
+.view {
+width: 100%;
+height: 100%;
+display: block;
+}
+
+/* Layout fills the padded area; side columns take all remaining width */
+.home-layout {
+width: 100%;
+height: 100%;
+display: grid;
+grid-template-columns: 1fr auto 1fr;
+align-items: stretch;
+gap: 96px;
+box-sizing: border-box;
+}
+
+/* White boxes fill their side columns and the full orange height */
 .side-box {
 background: #fff;
-width: clamp(220px, 24vw, 460px);
-height: clamp(280px, 56vh, 560px);
+width: 100%;
+height: 100%;
 flex: 0 0 auto;
 }
 
