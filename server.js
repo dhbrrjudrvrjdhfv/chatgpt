@@ -46,19 +46,6 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   initializeApp({ credential: cert(serviceAccount) });
   db = getFirestore();
 }
-const updateUUID = async (documentId, newUUID) => {
-    if (!db) return;
-
-    try {
-        await db.collection('clients').doc(documentId).update({
-            uuid: newUUID // Assuming the field name is 'uuid'
-        });
-        console.log("UUID updated successfully!");
-    } catch (error) {
-        console.error("Error updating UUID: ", error);
-    }
-};
-
 // ===== In-memory fallback store =====
 const memoryStore = {
   clientCounter: 0,
