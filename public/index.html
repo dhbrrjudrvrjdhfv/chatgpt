@@ -51,35 +51,30 @@
      a 121 121 0 1 1 0 242
      a 121 121 0 1 1 0 -242" />
 
-<!-- 🔆 50% STRONGER SHINE -->
+<!-- 🌟 GLOW FILTER -->
 <filter id="snakeShine"
-        x="-35%" y="-35%"
-        width="170%" height="170%"
+        x="-40%" y="-40%"
+        width="180%" height="180%"
         color-interpolation-filters="sRGB">
 
+  <!-- outer glow -->
   <feGaussianBlur
     in="SourceGraphic"
-    stdDeviation="1.8"
+    stdDeviation="3"
     result="blur"/>
 
-  <feSpecularLighting
+  <feColorMatrix
     in="blur"
-    surfaceScale="4.5"
-    specularConstant="1.65"
-    specularExponent="45"
-    lighting-color="#ffffff"
-    result="spec">
-    <feDistantLight azimuth="30" elevation="75"/>
-  </feSpecularLighting>
-
-  <feComposite
-    in="spec"
-    in2="SourceGraphic"
-    operator="in"
-    result="highlight"/>
+    type="matrix"
+    values="
+      1 0 0 0 0
+      0 1 0 0 0
+      0 0 1 0 0
+      0 0 0 1.2 0"
+    result="glow"/>
 
   <feMerge>
-    <feMergeNode in="highlight"/>
+    <feMergeNode in="glow"/>
     <feMergeNode in="SourceGraphic"/>
   </feMerge>
 
