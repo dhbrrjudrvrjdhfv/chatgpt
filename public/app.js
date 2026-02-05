@@ -199,26 +199,14 @@ function shakeTransform(tsMs, level) {
   return { x, y, r };
 }
 
-// ===== BODY SEGMENTS (BASE + GLOSS) =====
 const segEls = [];
-const glossEls = [];
-
 for (let i = 0; i < SEGMENTS; i++) {
-  const base = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  base.setAttribute("href", "#orbit");
-  base.setAttribute("class", "body-seg");
-  base.style.opacity = "0";
-
-  const gloss = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  gloss.setAttribute("href", "#orbit");
-  gloss.setAttribute("class", "body-seg");
-  gloss.style.opacity = "0";
-
-  bodyG.appendChild(base);
-  bodyG.appendChild(gloss);
-
-  segEls.push(base);
-  glossEls.push(gloss);
+  const u = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  u.setAttribute("href", "#orbit");
+  u.setAttribute("class", "body-seg");
+  u.style.opacity = "0";
+  bodyG.appendChild(u);
+  segEls.push(u);
 }
 
 function setHeadAtLength(len) {
@@ -261,43 +249,28 @@ function render(progress01, tsMs, remainingDisplayInt) {
   headShape.setAttribute("ry", String(headBodyThickness * 0.62));
   headShape.setAttribute("fill", snakeColor);
 
-  // ===== MOVE THE GRADIENT ITSELF (KEY FIX) =====
-  const grad = document.getElementById("snakeGloss");
-  if (grad) {
-    const sweep = (tsMs * 0.04) % 200;
-    grad.setAttribute("x1", String(-sweep));
-    grad.setAttribute("x2", String(200 - sweep));
-  }
-
   for (let i = 0; i < SEGMENTS; i++) {
     const seg = segEls[i];
-    const gloss = glossEls[i];
     const segStart = i * segLen;
 
     let len = Math.max(0, Math.min(segLen + SEG_OVERLAP, targetBodyLen - segStart));
     if (len <= 0.0001) {
       seg.style.opacity = "0";
-      gloss.style.opacity = "0";
       continue;
     }
 
     const t = SEGMENTS === 1 ? 1 : i / (SEGMENTS - 1);
     const w = BODY_BASE * (TAIL_SCALE + t * (HEAD_SCALE - TAIL_SCALE));
 
-    // base
     seg.style.strokeWidth = String(w);
     seg.style.stroke = snakeColor;
+
+    // SHINE EFFECT (ONLY ADDITION)
+    seg.style.filter = "url(#snakeShine)";
+
     seg.style.strokeDasharray = `${len} ${L}`;
     seg.style.strokeDashoffset = `${-segStart}`;
     seg.style.opacity = "1";
-
-    // gloss (shine)
-    const shineOffset = (tsMs * 0.04) % L;
-    gloss.style.stroke = "url(#snakeGloss)";
-    gloss.style.strokeWidth = String(w * 0.45);
-    gloss.style.strokeDasharray = `${len * 0.35} ${L}`;
-    gloss.style.strokeDashoffset = `${-segStart - shineOffset}`;
-    gloss.style.opacity = "0.9";
   }
 }
 
