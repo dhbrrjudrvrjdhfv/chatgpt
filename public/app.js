@@ -199,14 +199,26 @@ function shakeTransform(tsMs, level) {
   return { x, y, r };
 }
 
+// ===== BODY SEGMENTS (CHANGED) =====
 const segEls = [];
+const glossEls = [];
+
 for (let i = 0; i < SEGMENTS; i++) {
-  const u = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  u.setAttribute("href", "#orbit");
-  u.setAttribute("class", "body-seg");
-  u.style.opacity = "0";
-  bodyG.appendChild(u);
-  segEls.push(u);
+  const base = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  base.setAttribute("href", "#orbit");
+  base.setAttribute("class", "body-seg");
+  base.style.opacity = "0";
+
+  const gloss = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  gloss.setAttribute("href", "#orbit");
+  gloss.setAttribute("class", "body-seg");
+  gloss.style.opacity = "0";
+
+  bodyG.appendChild(base);
+  bodyG.appendChild(gloss);
+
+  segEls.push(base);
+  glossEls.push(gloss);
 }
 
 function setHeadAtLength(len) {
@@ -251,11 +263,13 @@ function render(progress01, tsMs, remainingDisplayInt) {
 
   for (let i = 0; i < SEGMENTS; i++) {
     const seg = segEls[i];
+    const gloss = glossEls[i];
     const segStart = i * segLen;
 
     let len = Math.max(0, Math.min(segLen + SEG_OVERLAP, targetBodyLen - segStart));
     if (len <= 0.0001) {
       seg.style.opacity = "0";
+      gloss.style.opacity = "0";
       continue;
     }
 
@@ -264,13 +278,17 @@ function render(progress01, tsMs, remainingDisplayInt) {
 
     seg.style.strokeWidth = String(w);
     seg.style.stroke = snakeColor;
-
-    // SHINE EFFECT (ONLY ADDITION)
-    seg.style.filter = "url(#snakeShine)";
-
     seg.style.strokeDasharray = `${len} ${L}`;
     seg.style.strokeDashoffset = `${-segStart}`;
     seg.style.opacity = "1";
+
+    // ===== GLOSS SWEEP (CHANGED) =====
+    const shineOffset = (tsMs * 0.04) % L;
+    gloss.style.stroke = "url(#snakeGloss)";
+    gloss.style.strokeWidth = String(w * 0.55);
+    gloss.style.strokeDasharray = `${len * 0.35} ${L}`;
+    gloss.style.strokeDashoffset = `${-segStart - shineOffset}`;
+    gloss.style.opacity = "0.85";
   }
 }
 
