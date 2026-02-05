@@ -7,35 +7,28 @@
 <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+
 <header class="site-header">
-<div class="header-inner">
-<div class="header-grid">
+  <div class="header-inner">
+    <div class="header-grid">
+      <div class="header-left">
+        <a class="nav-link" href="/guide" data-route="guide">Guide</a>
+        <a class="nav-link" href="/more" data-route="more">More</a>
+      </div>
 
-<!-- Row 1 / Col 1 -->
-<div class="header-left">
-<a class="nav-link" href="/guide" data-route="guide">Guide</a>
-<a class="nav-link" href="/more" data-route="more">More</a>
-</div>
+      <a class="header-logo" href="/" data-route="home">Ouroboros</a>
 
-<!-- Row 1 / Col 2 -->
-<a class="header-logo" href="/" data-route="home">Ouroboros</a>
+      <div class="visits-label">Visits Today</div>
 
-<!-- Row 1 / Col 3 -->
-<div class="visits-label">Visits Today</div>
+      <div class="header-left-spacer"></div>
 
-<!-- Row 2 / Col 1 -->
-<div class="header-left-spacer"></div>
+      <div class="payout-line">
+        Current payout XXXX → Next in <span id="payout-timer">LOADING</span>
+      </div>
 
-<!-- Row 2 / Col 2 -->
-<div class="payout-line">
-Current payout XXXX → Next in <span id="payout-timer">LOADING</span>
-</div>
-
-<!-- Row 2 / Col 3 -->
-<div class="visits-count" id="visits-today">XXXX</div>
-
-</div>
-</div>
+      <div class="visits-count" id="visits-today">XXXX</div>
+    </div>
+  </div>
 </header>
 
 <main class="page">
@@ -45,62 +38,66 @@ Current payout XXXX → Next in <span id="payout-timer">LOADING</span>
 
 <div class="center-slot">
 <button
-id="countdown-button"
-class="countdown-button"
-type="button"
-aria-label="Ouroboros countdown">
+  id="countdown-button"
+  class="countdown-button"
+  type="button"
+  aria-label="Ouroboros countdown">
 
-<svg
-class="countdown-ring"
-viewBox="0 0 264 264"
-aria-hidden="true">
-
+<svg class="countdown-ring" viewBox="0 0 264 264" aria-hidden="true">
 <defs>
-<path id="orbit"
-d="M 132 11
-a 121 121 0 1 1 0 242
-a 121 121 0 1 1 0 -242" />
 
-<!-- SHINE GRADIENT -->
-<linearGradient id="snakeShine" x1="0" y1="0" x2="0" y2="1">
-  <stop offset="0%" stop-color="rgba(255,255,255,0.9)" />
-  <stop offset="35%" stop-color="rgba(255,255,255,0.25)" />
-  <stop offset="50%" stop-color="rgba(255,255,255,0.05)" />
-  <stop offset="65%" stop-color="rgba(0,0,0,0.15)" />
-  <stop offset="100%" stop-color="rgba(0,0,0,0.35)" />
-</linearGradient>
+<path id="orbit"
+  d="M 132 11
+     a 121 121 0 1 1 0 242
+     a 121 121 0 1 1 0 -242" />
+
+<!-- ✅ REAL FILTER (FIX) -->
+<filter id="snakeShine" x="-20%" y="-20%" width="140%" height="140%">
+  <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blur"/>
+  <feSpecularLighting
+    in="blur"
+    surfaceScale="2"
+    specularConstant="0.6"
+    specularExponent="25"
+    lighting-color="#ffffff"
+    result="spec">
+    <feDistantLight azimuth="45" elevation="60"/>
+  </feSpecularLighting>
+  <feComposite in="spec" in2="SourceGraphic" operator="in"/>
+  <feMerge>
+    <feMergeNode/>
+    <feMergeNode in="SourceGraphic"/>
+  </feMerge>
+</filter>
+
 </defs>
 
 <circle class="ring-bg" cx="132" cy="132" r="121"></circle>
 <g id="body"></g>
 
-<!-- Snake head (non-interactive) -->
 <g id="snakeHead" pointer-events="none">
-<ellipse id="headShape" cx="0" cy="0" rx="16" ry="11"></ellipse>
-
-<circle cx="6" cy="-4" r="2" fill="#000"></circle>
-<circle cx="6" cy="4" r="2" fill="#000"></circle>
-
-<!-- MOVED TONGUE FORWARD -->
-<path id="tongue"
-d="M 16 0 L 22 0
-M 22 0 L 27 -4
-M 22 0 L 27 4"
-stroke="#c00"
-stroke-width="2"
-stroke-linecap="round"
-fill="none"></path>
+  <ellipse id="headShape" cx="0" cy="0" rx="16" ry="11"></ellipse>
+  <circle cx="6" cy="-4" r="2" fill="#000"></circle>
+  <circle cx="6" cy="4" r="2" fill="#000"></circle>
+  <path id="tongue"
+    d="M 16 0 L 22 0
+       M 22 0 L 27 -4
+       M 22 0 L 27 4"
+    stroke="#c00"
+    stroke-width="2"
+    stroke-linecap="round"
+    fill="none"></path>
 </g>
 
 <path id="orbitMeasure"
-d="M 132 11 a 121 121 0 1 1 0 242 a 121 121 0 1 1 0 -242"
-fill="none"
-stroke="none"></path>
+  d="M 132 11 a 121 121 0 1 1 0 242 a 121 121 0 1 1 0 -242"
+  fill="none"
+  stroke="none"></path>
 
 </svg>
 
 <div class="countdown-core" id="countdown-core">
-<span id="countdown-value">60</span>
+  <span id="countdown-value">60</span>
 </div>
 
 </button>
@@ -114,20 +111,11 @@ stroke="none"></path>
 <section class="view" data-view="more" hidden></section>
 </main>
 
-<!-- Cookie permission modal -->
 <div id="cookie-modal" class="cookie-modal" aria-hidden="true">
 <div class="cookie-card" role="dialog" aria-live="assertive">
 <h1>Cookie Permission Needed</h1>
-<p>This site needs cookies to work. If cookies are blocked, the site cannot be used.</p>
 
-<p>Common reasons cookies might not work:</p>
-<ul>
-<li>Cookies are turned off in browser settings.</li>
-<li>Private/Incognito mode is enabled.</li>
-<li>“Block all cookies” is turned on.</li>
-<li>A privacy/ads extension is blocking storage.</li>
-<li>The browser is set to clear cookies on exit.</li>
-</ul>
+<p>This site needs cookies to work.</p>
 
 <div class="cookie-actions">
 <button id="allow-cookies" type="button">Allow Cookies</button>
@@ -135,7 +123,7 @@ stroke="none"></path>
 
 <p id="cookie-status" class="cookie-status" hidden></p>
 <p id="cookie-error" class="cookie-error" hidden>
-Cookies are still blocked. Please enable them in your browser settings.
+Cookies are still blocked.
 </p>
 <p id="cookie-limit" class="cookie-error" hidden>
 The site has reached the 1,000,000 user limit.
