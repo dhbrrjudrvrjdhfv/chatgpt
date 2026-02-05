@@ -51,25 +51,25 @@
      a 121 121 0 1 1 0 242
      a 121 121 0 1 1 0 -242" />
 
-<!-- ✨ ENHANCED SHINE FILTER -->
+<!-- 🔆 50% STRONGER SHINE -->
 <filter id="snakeShine"
-        x="-30%" y="-30%"
-        width="160%" height="160%"
+        x="-35%" y="-35%"
+        width="170%" height="170%"
         color-interpolation-filters="sRGB">
 
   <feGaussianBlur
     in="SourceGraphic"
-    stdDeviation="1.5"
+    stdDeviation="1.8"
     result="blur"/>
 
   <feSpecularLighting
     in="blur"
-    surfaceScale="3"
-    specularConstant="1.1"
-    specularExponent="35"
+    surfaceScale="4.5"
+    specularConstant="1.65"
+    specularExponent="45"
     lighting-color="#ffffff"
     result="spec">
-    <feDistantLight azimuth="35" elevation="70"/>
+    <feDistantLight azimuth="30" elevation="75"/>
   </feSpecularLighting>
 
   <feComposite
@@ -148,4 +148,4 @@ The site has reached the 1,000,000 user limit.
 
 <script src="/app.js"></script>
 </body>
-</html>
+</html> 
