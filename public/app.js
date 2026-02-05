@@ -199,7 +199,7 @@ function shakeTransform(tsMs, level) {
   return { x, y, r };
 }
 
-// ===== BODY SEGMENTS (CHANGED) =====
+// ===== BODY SEGMENTS (BASE + GLOSS) =====
 const segEls = [];
 const glossEls = [];
 
@@ -261,6 +261,14 @@ function render(progress01, tsMs, remainingDisplayInt) {
   headShape.setAttribute("ry", String(headBodyThickness * 0.62));
   headShape.setAttribute("fill", snakeColor);
 
+  // ===== MOVE THE GRADIENT ITSELF (KEY FIX) =====
+  const grad = document.getElementById("snakeGloss");
+  if (grad) {
+    const sweep = (tsMs * 0.04) % 200;
+    grad.setAttribute("x1", String(-sweep));
+    grad.setAttribute("x2", String(200 - sweep));
+  }
+
   for (let i = 0; i < SEGMENTS; i++) {
     const seg = segEls[i];
     const gloss = glossEls[i];
@@ -276,19 +284,20 @@ function render(progress01, tsMs, remainingDisplayInt) {
     const t = SEGMENTS === 1 ? 1 : i / (SEGMENTS - 1);
     const w = BODY_BASE * (TAIL_SCALE + t * (HEAD_SCALE - TAIL_SCALE));
 
+    // base
     seg.style.strokeWidth = String(w);
     seg.style.stroke = snakeColor;
     seg.style.strokeDasharray = `${len} ${L}`;
     seg.style.strokeDashoffset = `${-segStart}`;
     seg.style.opacity = "1";
 
-    // ===== GLOSS SWEEP (CHANGED) =====
+    // gloss (shine)
     const shineOffset = (tsMs * 0.04) % L;
     gloss.style.stroke = "url(#snakeGloss)";
-    gloss.style.strokeWidth = String(w * 0.55);
+    gloss.style.strokeWidth = String(w * 0.45);
     gloss.style.strokeDasharray = `${len * 0.35} ${L}`;
     gloss.style.strokeDashoffset = `${-segStart - shineOffset}`;
-    gloss.style.opacity = "0.85";
+    gloss.style.opacity = "0.9";
   }
 }
 
