@@ -1,5 +1,3 @@
-// public/app.js
-
 const countdownButton = document.getElementById("countdown-button");
 const countdownValue = document.getElementById("countdown-value");
 const coreEl = document.getElementById("countdown-core");
@@ -90,7 +88,6 @@ const checkConsent = async () => {
     hasConsent = true;
     hideCookieModal();
 
-    // Visits Today is only for consented users; show LOADING until NIST is ready.
     updateVisitsToday(data.visitsToday, data.visitsToday !== null);
 
     return true;
@@ -132,7 +129,7 @@ const requestConsent = async () => {
 
 allowCookiesButton.addEventListener("click", requestConsent);
 
-// ===== ouroboros renderer (server-driven) =====
+// ===== ouroboros renderer =====
 
 const orbit = document.getElementById("orbitMeasure");
 const bodyG = document.getElementById("body");
@@ -178,7 +175,6 @@ function rainbowAt(progress01) {
   return lerpColor(RAINBOW[i], RAINBOW[i + 1], t);
 }
 
-// 60-46: 0, 45-31: 2, 30-21: 4, 20-11: 6, 10-6: 8, 5-1: 10, 0: 0
 function shakeLevel(remainingSeconds) {
   if (remainingSeconds <= 0) return 0;
   if (remainingSeconds <= 5) return 10;
@@ -192,8 +188,8 @@ function shakeLevel(remainingSeconds) {
 function shakeTransform(tsMs, level) {
   if (level <= 0) return { x: 0, y: 0, r: 0 };
 
-  const ampPx = level * 0.55; // 10 -> 5.5px
-  const ampDeg = level * 0.18; // 10 -> 1.8deg
+  const ampPx = level * 0.55;
+  const ampDeg = level * 0.18;
 
   const t = tsMs / 1000;
   const x = (Math.sin(t * 37) + 0.6 * Math.sin(t * 53 + 1.3)) * ampPx * 0.55;
@@ -265,8 +261,12 @@ function render(progress01, tsMs, remainingDisplayInt) {
 
     const t = SEGMENTS === 1 ? 1 : i / (SEGMENTS - 1);
     const w = BODY_BASE * (TAIL_SCALE + t * (HEAD_SCALE - TAIL_SCALE));
+
     seg.style.strokeWidth = String(w);
     seg.style.stroke = snakeColor;
+
+    // SHINE EFFECT (ONLY ADDITION)
+    seg.style.filter = "url(#snakeShine)";
 
     seg.style.strokeDasharray = `${len} ${L}`;
     seg.style.strokeDashoffset = `${-segStart}`;
@@ -307,7 +307,6 @@ const connectEvents = () => {
     updatePayoutTimer(data.payoutRemaining, data.nistReady);
     updateVisitsToday(data.visitsToday, data.nistReady);
 
-    // Re-enable visuals when server resets (>0)
     if (data.remaining > 0) {
       setFinishedState(false);
       for (const seg of segEls) seg.style.opacity = "0";
