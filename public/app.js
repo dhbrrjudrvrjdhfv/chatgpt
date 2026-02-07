@@ -1,3 +1,4 @@
+// public/app.js
 const countdownButton = document.getElementById("countdown-button");
 const countdownValue = document.getElementById("countdown-value");
 const coreEl = document.getElementById("countdown-core");
@@ -19,13 +20,48 @@ let clickBoostEndsAt = 0;
 let animationFrame = null;
 let lastEndsAt = 0;
 
+// ===== NEW: Backend/SSE state (freeze ASAP when offline) =====
+let backendOnline = false;
+let eventsSource = null;
+
+const setBackendOnline = (isOnline) => {
+  backendOnline = isOnline;
+
+  // Disable interactions immediately when offline
+  countdownButton.disabled = !isOnline;
+
+  // Stop any fake “boost” visuals when offline
+  if (!isOnline) clickBoostEndsAt = 0;
+
+  // Show LOADING placeholders while offline
+  if (!isOnline) {
+    updatePayoutTimer(0, false);
+    updateVisitsToday(null, false);
+  }
+};
+
+const pauseAnimation = () => {
+  if (animationFrame) {
+    cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+  }
+};
+
+const resumeAnimation = () => {
+  if (!animationFrame) {
+    animationFrame = requestAnimationFrame(renderFrame);
+  }
+};
+
 const formatHms = (totalSeconds) => {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds));
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const seconds = safeSeconds % 60;
 
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(
+    seconds
+  ).padStart(2, "0")}`;
 };
 
 const updatePayoutTimer = (remainingSeconds, isReady) => {
@@ -47,7 +83,6 @@ const updateVisitsToday = (visitsToday, nistReady) => {
 };
 
 // ===== consent =====
-
 const setCookieStatus = (message, { show = true } = {}) => {
   cookieStatus.textContent = message;
   cookieStatus.hidden = !show;
@@ -130,7 +165,6 @@ const requestConsent = async () => {
 allowCookiesButton.addEventListener("click", requestConsent);
 
 // ===== ouroboros renderer =====
-
 const orbit = document.getElementById("orbitMeasure");
 const bodyG = document.getElementById("body");
 const headG = document.getElementById("snakeHead");
@@ -237,8 +271,9 @@ function render(progress01, tsMs, remainingDisplayInt) {
 
   const lvl = shakeLevel(remainingDisplayInt);
   const s = shakeTransform(tsMs, lvl);
-  countdownButton.style.transform =
-    `translate(${s.x.toFixed(2)}px, ${s.y.toFixed(2)}px) rotate(${s.r.toFixed(2)}deg)`;
+  countdownButton.style.transform = `translate(${s.x.toFixed(2)}px, ${s.y.toFixed(
+    2
+  )}px) rotate(${s.r.toFixed(2)}deg)`;
 
   const snakeColor = rainbowAt(progress01);
 
@@ -265,7 +300,6 @@ function render(progress01, tsMs, remainingDisplayInt) {
     seg.style.strokeWidth = String(w);
     seg.style.stroke = snakeColor;
 
-    // SHINE EFFECT (ONLY ADDITION)
     seg.style.filter = "url(#snakeShine)";
 
     seg.style.strokeDasharray = `${len} ${L}`;
@@ -297,11 +331,22 @@ function renderFrame(ts) {
 }
 
 // ===== SSE + click =====
-
 const connectEvents = () => {
+  if (eventsSource) {
+    eventsSource.close();
+    eventsSource = null;
+  }
+
+  setBackendOnline(false);
+  pauseAnimation();
+
   const events = new EventSource("/events");
+  eventsSource = events;
+
   events.onmessage = (event) => {
     const data = JSON.parse(event.data);
+
+    setBackendOnline(true);
 
     lastEndsAt = data.endsAt || 0;
     updatePayoutTimer(data.payoutRemaining, data.nistReady);
@@ -313,25 +358,37 @@ const connectEvents = () => {
       coreEl.classList.remove("is-danger");
     }
 
-    if (!animationFrame) {
-      animationFrame = requestAnimationFrame(renderFrame);
-    }
+    resumeAnimation();
+  };
+
+  events.onerror = () => {
+    setBackendOnline(false);
+    pauseAnimation();
+    // Do not close: EventSource auto-reconnects.
   };
 };
 
 countdownButton.addEventListener("click", async () => {
+  if (!backendOnline) return;
+
   if (!hasConsent) {
     showCookieModal();
     return;
   }
   if (countdownButton.classList.contains("is-finished")) return;
 
-  clickBoostEndsAt = performance.now() + clickBoostDuration;
-  await fetch("/api/click", { method: "POST" });
+  try {
+    const resp = await fetch("/api/click", { method: "POST" });
+    if (!resp.ok) throw new Error("click failed");
+
+    clickBoostEndsAt = performance.now() + clickBoostDuration;
+  } catch {
+    setBackendOnline(false);
+    pauseAnimation();
+  }
 });
 
 // ===== Router =====
-
 const setView = (name) => {
   document.querySelectorAll(".view").forEach((v) => {
     v.hidden = v.dataset.view !== name;
@@ -359,6 +416,10 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", () => {
   setView(routeFromPath(location.pathname));
 });
+
+// ===== Start =====
+setBackendOnline(false);
+pauseAnimation();
 
 setView(routeFromPath(location.pathname));
 checkConsent().then(connectEvents);
