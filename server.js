@@ -17,10 +17,7 @@ const PORT = process.env.PORT || 3000;
 const MAX_CLIENTS = 1_000_000;
 const COOKIE_NAME = "client_token";
 
-const NIST_URLS = [
-  "https://time.gov/actualtime.cgi",
-  "https://time.nist.gov/actualtime.cgi"
-];
+const NIST_URLS = ["https://time.gov/actualtime.cgi", "https://time.nist.gov/actualtime.cgi"];
 
 const NIST_DAYTIME_SERVERS = [
   "time.nist.gov",
@@ -46,6 +43,7 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   initializeApp({ credential: cert(serviceAccount) });
   db = getFirestore();
 }
+
 // ===== In-memory fallback store =====
 const memoryStore = {
   clientCounter: 0,
@@ -59,6 +57,7 @@ const memoryStore = {
 const sseClients = new Set();
 
 // ===== Countdown (local time) =====
+// NOTE: this is now boot-restored from Firestore if enabled
 let countdownEndAt = Date.now() + 60_000;
 
 // ===== NIST offset =====
@@ -79,6 +78,7 @@ const getRemainingSeconds = () => {
   return Math.max(0, Math.ceil(remainingMs / 1000));
 };
 
+// ===== Firestore: payout cycle meta =====
 const loadDeploymentStart = async () => {
   if (!db) return;
   const doc = await db.collection("meta").doc("deploymentStartNistMs").get();
@@ -88,6 +88,41 @@ const loadDeploymentStart = async () => {
 const persistDeploymentStart = async (value) => {
   if (!db) return;
   await db.collection("meta").doc("deploymentStartNistMs").set({ value }, { merge: true });
+};
+
+// ===== Firestore: countdown meta (DEPLOYMENT-PROOF) =====
+const COUNTDOWN_META_DOC = "countdownEndAt"; // meta/countdownEndAt { value: <ms> }
+
+const normalizeMsNumber = (v) => {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  if (v <= 0) return null;
+  return v;
+};
+
+const loadCountdownEndAt = async () => {
+  if (!db) return;
+
+  const ref = db.collection("meta").doc(COUNTDOWN_META_DOC);
+  const snap = await ref.get();
+
+  const stored = snap.exists ? normalizeMsNumber(snap.data()?.value) : null;
+
+  if (stored) {
+    countdownEndAt = stored;
+    return;
+  }
+
+  // If missing/invalid, create one immediately.
+  countdownEndAt = Date.now() + 60_000;
+  await ref.set({ value: countdownEndAt }, { merge: true });
+};
+
+const persistCountdownEndAt = async () => {
+  if (!db) return;
+  await db
+    .collection("meta")
+    .doc(COUNTDOWN_META_DOC)
+    .set({ value: countdownEndAt }, { merge: true });
 };
 
 const normalizeNistMs = (rawValue) => {
@@ -209,11 +244,7 @@ const getNistNowMs = () => Date.now() + nistOffsetMs;
 const getPayoutRemainingSeconds = () => {
   if (!deploymentStartNistMs) return PAYOUT_CYCLE_SECONDS;
 
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((getNistNowMs() - deploymentStartNistMs) / 1000)
-  );
-
+  const elapsedSeconds = Math.max(0, Math.floor((getNistNowMs() - deploymentStartNistMs) / 1000));
   const offset = elapsedSeconds % PAYOUT_TICK_SECONDS;
   return PAYOUT_CYCLE_SECONDS - offset;
 };
@@ -223,7 +254,7 @@ const getNistDayKey = () => {
   if (!hasNistSync) return null;
 
   const adjustedNow = getNistNowMs() - visitsDayOffsetMs;
-  return new Date(adjustedNow).toISOString().slice(0, 10);
+  return new Date(adjustedNow).toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
 };
 
 const refreshVisitsTodayCacheIfNeeded = () => {
@@ -434,7 +465,17 @@ app.post("/api/click", async (req, res) => {
   const remaining = getRemainingSeconds();
   if (remaining === 0) return res.status(200).json({ remaining });
 
+  // Reset timer
   countdownEndAt = Date.now() + 60_000;
+
+  // Persist timer reset (deployment-proof)
+  try {
+    await persistCountdownEndAt();
+  } catch (e) {
+    // Do not block functionality if Firestore write fails
+    console.warn("Failed to persist countdownEndAt:", e?.message || e);
+  }
+
   broadcastCountdown();
 
   const timestamp = Date.now();
@@ -501,16 +542,33 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// ===== Start server =====
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// ===== Init + Start server =====
+const initialize = async () => {
+  // Restore Firestore-backed values before serving traffic (if Firestore enabled)
+  if (db) {
+    await Promise.all([loadDeploymentStart(), loadCountdownEndAt()]);
+  }
 
-// ===== Init NIST sync =====
-const initializeNist = async () => {
-  await loadDeploymentStart();
+  // NIST sync (independent of countdown persistence)
   await syncNistTime();
   setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
+
+  // If Firestore enabled but countdown doc still missing for any reason, persist once
+  if (db) {
+    try {
+      await persistCountdownEndAt();
+    } catch {}
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 };
 
-initializeNist();
+initialize().catch((err) => {
+  console.error("Fatal initialize error:", err);
+  // Still try to start, but countdown will be in-memory default
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+});
