@@ -71,7 +71,6 @@ let visitsDayKeyCache = null;
 let visitsTodayCache = null; // null => LOADING / not ready
 
 // ===== OPTION A: "Restart visits day" offset =====
-// This shifts the NIST-based day boundary so you can wipe visits instantly.
 let visitsDayOffsetMs = 0;
 
 // ===== Helpers =====
@@ -223,9 +222,8 @@ const getPayoutRemainingSeconds = () => {
 const getNistDayKey = () => {
   if (!hasNistSync) return null;
 
-  // Shift day boundary so you can "restart today" on demand.
   const adjustedNow = getNistNowMs() - visitsDayOffsetMs;
-  return new Date(adjustedNow).toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  return new Date(adjustedNow).toISOString().slice(0, 10);
 };
 
 const refreshVisitsTodayCacheIfNeeded = () => {
@@ -244,7 +242,6 @@ const refreshVisitsTodayCacheIfNeeded = () => {
 
   if (visitsDayKeyCache === dayKey && visitsTodayCache !== null) return;
 
-  // Day changed or cache empty => reset and (if Firestore) load actual count
   visitsDayKeyCache = dayKey;
   visitsTodayCache = 0;
 
@@ -265,9 +262,7 @@ const refreshVisitsTodayCacheIfNeeded = () => {
       const count = doc.data()?.count;
       visitsTodayCache = typeof count === "number" ? count : 0;
     })
-    .catch(() => {
-      // keep existing cache
-    });
+    .catch(() => {});
 };
 
 const markVisitToday = async (clientId) => {
@@ -276,7 +271,6 @@ const markVisitToday = async (clientId) => {
   const dayKey = getNistDayKey();
   if (!dayKey) return null;
 
-  // Ensure cache is aligned to today
   if (visitsDayKeyCache !== dayKey) {
     visitsDayKeyCache = dayKey;
     visitsTodayCache = 0;
@@ -307,9 +301,7 @@ const markVisitToday = async (clientId) => {
         ? dailySnap.data().count
         : 0;
 
-    if (visitorSnap.exists) {
-      return currentCount;
-    }
+    if (visitorSnap.exists) return currentCount;
 
     transaction.set(visitorRef, { seenAt: FieldValue.serverTimestamp() }, { merge: true });
     const nextCount = currentCount + 1;
@@ -442,7 +434,6 @@ app.post("/api/click", async (req, res) => {
   const remaining = getRemainingSeconds();
   if (remaining === 0) return res.status(200).json({ remaining });
 
-  // NOTE: countdown uses local time; keep as-is unless you want NIST here too.
   countdownEndAt = Date.now() + 60_000;
   broadcastCountdown();
 
@@ -466,7 +457,7 @@ app.post("/api/click", async (req, res) => {
   return res.status(200).json({ remaining: getRemainingSeconds() });
 });
 
-// ===== Admin: reset payout cycle (already in your code) =====
+// ===== Admin: reset payout cycle =====
 app.post("/api/payout/reset", async (req, res) => {
   const token = process.env.RESET_PAYOUT_TOKEN;
   if (!token || req.headers["x-reset-token"] !== token) {
@@ -491,11 +482,9 @@ app.post("/api/visits/reset", async (req, res) => {
     return res.status(400).json({ error: "NIST_NOT_READY" });
   }
 
-  // Force a new "today" boundary right now by shifting the day key.
   const now = getNistNowMs();
   visitsDayOffsetMs = now % 86400000;
 
-  // Reset caches so SSE + /api/me reflect new day immediately.
   visitsDayKeyCache = null;
   visitsTodayCache = 0;
 
