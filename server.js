@@ -38,8 +38,8 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ===== Firestore optional =====
 let db = null;
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+if (process.env.firebase_service_account) {
+  const serviceAccount = JSON.parse(process.env.firebase_service_account);
   initializeApp({ credential: cert(serviceAccount) });
   db = getFirestore();
 }
