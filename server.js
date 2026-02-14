@@ -29,8 +29,8 @@ const NIST_DAYTIME_SERVERS = [
 
 const NIST_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
-const PAYOUT_CYCLE_SECONDS = 3600;
-const PAYOUT_TICK_SECONDS = PAYOUT_CYCLE_SECONDS + 1;
+// ===== 24h payout cycle aligned to the same adjusted NIST day as Visits Today =====
+const PAYOUT_CYCLE_SECONDS = 86400; // 24h
 
 app.use(express.json());
 app.use(cookieParser());
@@ -62,7 +62,7 @@ let countdownEndAt = Date.now() + 60_000;
 
 // ===== NIST offset =====
 let nistOffsetMs = 0;
-let deploymentStartNistMs = null; // kept for backward compatibility; payout no longer uses this anchor
+let deploymentStartNistMs = null; // legacy; payout no longer anchored here
 let hasNistSync = false;
 
 // ===== Visits Today cache =====
@@ -78,7 +78,7 @@ const getRemainingSeconds = () => {
   return Math.max(0, Math.ceil(remainingMs / 1000));
 };
 
-// ===== Firestore: payout cycle meta (legacy; payout no longer anchored here) =====
+// ===== Firestore: legacy payout cycle meta (kept for compatibility) =====
 const loadDeploymentStart = async () => {
   if (!db) return;
   const doc = await db.collection("meta").doc("deploymentStartNistMs").get();
@@ -122,7 +122,7 @@ const persistCountdownEndAt = async () => {
   await db.collection("meta").doc(COUNTDOWN_META_DOC).set({ value: countdownEndAt }, { merge: true });
 };
 
-// ===== Firestore: visits day offset meta (NEW; keeps “restart today” stable across restarts/instances) =====
+// ===== Firestore: visits day offset meta (keeps “restart today” stable across restarts/instances) =====
 const VISITS_OFFSET_META_DOC = "visitsDayOffsetMs"; // meta/visitsDayOffsetMs { value: <ms> }
 
 const normalizeOffsetMsNumber = (v) => {
@@ -257,7 +257,7 @@ const syncNistTime = async () => {
     const nistMs = await fetchNistTimestamp();
     nistOffsetMs = nistMs - Date.now();
 
-    // legacy meta; still persisted for compatibility, but payout timer no longer uses it
+    // legacy meta; still persisted for compatibility
     if (!deploymentStartNistMs) {
       deploymentStartNistMs = nistMs;
       await persistDeploymentStart(deploymentStartNistMs);
@@ -271,23 +271,24 @@ const syncNistTime = async () => {
 
 const getNistNowMs = () => Date.now() + nistOffsetMs;
 
-// ===== Payout timer (NEW anchor: same adjusted NIST clock as Visits Today) =====
+// ===== Adjusted NIST clock (same basis as Visits Today) =====
 const getAdjustedNistNowMs = () => getNistNowMs() - visitsDayOffsetMs;
 
+// ===== 24h payout timer aligned to adjusted NIST day boundary =====
 const getPayoutRemainingSeconds = () => {
   if (!hasNistSync) return null;
 
-  const adjustedSeconds = Math.max(0, Math.floor(getAdjustedNistNowMs() / 1000));
-  const offset = adjustedSeconds % PAYOUT_TICK_SECONDS;
-  const remaining = PAYOUT_CYCLE_SECONDS - offset;
+  const adjustedSeconds = Math.floor(getAdjustedNistNowMs() / 1000);
+  const secondsIntoDay = ((adjustedSeconds % PAYOUT_CYCLE_SECONDS) + PAYOUT_CYCLE_SECONDS) % PAYOUT_CYCLE_SECONDS;
 
-  return Math.max(0, Math.min(PAYOUT_CYCLE_SECONDS, remaining));
+  // Remaining until next boundary. If exactly on boundary, show full 24h.
+  const remaining = PAYOUT_CYCLE_SECONDS - secondsIntoDay;
+  return remaining === 0 ? PAYOUT_CYCLE_SECONDS : remaining;
 };
 
 // ===== Visits Today (Option A day-boundary shift) =====
 const getNistDayKey = () => {
   if (!hasNistSync) return null;
-
   const adjustedNow = getAdjustedNistNowMs();
   return new Date(adjustedNow).toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
 };
@@ -357,10 +358,7 @@ const markVisitToday = async (clientId) => {
   const visitorRef = dailyRef.collection("visitors").doc(String(clientId));
 
   const newCount = await db.runTransaction(async (transaction) => {
-    const [dailySnap, visitorSnap] = await Promise.all([
-      transaction.get(dailyRef),
-      transaction.get(visitorRef)
-    ]);
+    const [dailySnap, visitorSnap] = await Promise.all([transaction.get(dailyRef), transaction.get(visitorRef)]);
 
     const currentCount =
       dailySnap.exists && typeof dailySnap.data()?.count === "number" ? dailySnap.data().count : 0;
@@ -532,7 +530,7 @@ app.post("/api/click", async (req, res) => {
 });
 
 // ===== Admin: reset payout cycle =====
-// UPDATED: payout is now anchored to visitsDayOffsetMs; reset aligns “today” to now (same as visits reset)
+// Aligns adjusted day boundary (and therefore payout + visits) to now
 app.post("/api/payout/reset", async (req, res) => {
   const token = process.env.RESET_PAYOUT_TOKEN;
   if (!token || req.headers["x-reset-token"] !== token) {
