@@ -6,6 +6,7 @@ import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import path from "path";
 import net from "net";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,10 +16,26 @@ const app = express();
 app.set("trust proxy", 1);
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json());
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, "public")));
+
 const MAX_CLIENTS = 1_000_000;
 const COOKIE_NAME = "client_token";
 const isProd = process.env.NODE_ENV === "production";
 const cookieOptions = { httpOnly: true, sameSite: "lax", secure: isProd, path: "/" };
+
+const REQUIRED_PUBLIC_FILES = ["index.html", "styles.css", "app.js"];
+
+const validatePublicAssets = () => {
+  const publicDir = path.join(__dirname, "public");
+  for (const fileName of REQUIRED_PUBLIC_FILES) {
+    const filePath = path.join(publicDir, fileName);
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Missing required public asset: ${fileName}`);
+    }
+  }
+};
 
 // ===== PAYOUT CYCLE =====
 const PAYOUT_TABLE = [
@@ -272,6 +289,15 @@ app.post("/api/click", async (req,res)=>{
   return res.json({remaining:getRemainingSeconds()});
 });
 
+
+app.get("/healthz", (_req, res) => {
+  res.json({
+    ok: true,
+    staticDir: path.join(__dirname, "public"),
+    nistReady: isWindowReady()
+  });
+});
+
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
 
 // ===== NIST SYNC + PAYOUT CYCLE =====
@@ -299,6 +325,7 @@ const syncNistTime = async () => {
 
 // ===== INIT SERVER =====
 const initialize = async () => {
+  validatePublicAssets();
   if(db) await Promise.all([
     db.collection("meta").doc(COUNTDOWN_META_DOC).get().then(snap=>{if(snap.exists) countdownEndAt=normalizeMsNumber(snap.data()?.value)||countdownEndAt;}),
     db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then(snap=>{visitsDayOffsetMs = snap.exists?normalizeOffsetMsNumber(snap.data()?.value):null;}),
@@ -321,4 +348,3 @@ POTENTIAL SHORTCOMINGS / PROBLEMS:
 5. Cookie-based authentication: no expiration handling; persistent cookies may accumulate invalid tokens.
 6. No logging on failed Firestore writes for clicks or visits (warnings may be silent).
 */
-
