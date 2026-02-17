@@ -13,6 +13,23 @@ const cookieLimit = document.getElementById("cookie-limit");
 
 let hasConsent = false;
 
+const payoutLine = document.querySelector(".payout-line");
+const payoutTimer = document.getElementById("payout-timer"); // optional, already defined above
+let currentPayout = "LOADING";
+
+const updatePayoutTimer = (remainingSeconds, isReady, payoutValue) => {
+  if (!payoutTimer) return;
+  if (!isReady) {
+    payoutTimer.textContent = "LOADING";
+    currentPayout = "LOADING";
+    payoutLine.firstChild.textContent = "Current payout LOADING → Next in ";
+    return;
+  }
+  payoutTimer.textContent = formatHms(remainingSeconds);
+  if (payoutValue) currentPayout = payoutValue;
+  payoutLine.firstChild.textContent = `Current payout ${currentPayout} → Next in `;
+};
+
 const countdownSeconds = 60;
 const clickBoostDuration = 1000;
 let clickBoostEndsAt = 0;
