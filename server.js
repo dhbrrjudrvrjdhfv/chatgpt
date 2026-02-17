@@ -1,4 +1,4 @@
-// server.js
+// ===== server.js =====
 import express from "express";
 import cookieParser from "cookie-parser";
 import { v4 as uuidv4 } from "uuid";
@@ -12,18 +12,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-
-// Trust Render / reverse proxy so secure cookies work correctly behind HTTPS termination.
 app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 3000;
 
 const MAX_CLIENTS = 1_000_000;
 const COOKIE_NAME = "client_token";
-
-// Secure cookies in production (HTTPS). Note: on http://localhost in production mode,
-// the browser will refuse to store secure cookies.
 const isProd = process.env.NODE_ENV === "production";
+
 const cookieOptions = {
   httpOnly: true,
   sameSite: "lax",
@@ -31,7 +27,10 @@ const cookieOptions = {
   path: "/"
 };
 
-const NIST_URLS = ["https://time.gov/actualtime.cgi", "https://time.nist.gov/actualtime.cgi"];
+const NIST_URLS = [
+  "https://time.gov/actualtime.cgi",
+  "https://time.nist.gov/actualtime.cgi"
+];
 
 const NIST_DAYTIME_SERVERS = [
   "time.nist.gov",
@@ -42,16 +41,25 @@ const NIST_DAYTIME_SERVERS = [
 ];
 
 const NIST_SYNC_INTERVAL_MS = 5 * 60 * 1000;
-
-// 24h window length (deployment/window-based, not calendar)
 const WINDOW_SECONDS = 86400;
 const MS_PER_DAY = 86400000;
 
+// ===== NEW: 40-day payout ladder =====
+const PAYOUT_TABLE = [
+  1,1.4,2,2.8,4,5.7,8.1,11.5,16.2,22.8,31.8,44.1,60.6,82.4,110,145,187,237,294,358,
+  425,493,559,620,676,726,769,806,837,864,887,906,922,936,948,958,967,976,986,1000
+];
+
+let payoutCycleIndex = 1; // 1..40
+let lastWindowKey = null;
+const PAYOUT_CYCLE_DOC = "payoutCycleIndex";
+
+// ===== Express =====
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ===== Firestore optional =====
+// ===== Firestore =====
 let db = null;
 if (process.env.firebase_service_account) {
   const serviceAccount = JSON.parse(process.env.firebase_service_account);
@@ -59,606 +67,217 @@ if (process.env.firebase_service_account) {
   db = getFirestore();
 }
 
-// ===== In-memory fallback store =====
+// ===== In-memory fallback =====
 const memoryStore = {
   clientCounter: 0,
-  clients: new Map(), // token -> id
-  clickCounts: new Map(), // id -> count
+  clients: new Map(),
+  clickCounts: new Map(),
   clickEvents: [],
-  dailyVisits: new Map() // dayKey -> Set(clientId)
+  dailyVisits: new Map()
 };
 
-// ===== SSE =====
 const sseClients = new Set();
-
-// ===== Countdown (local time) =====
 let countdownEndAt = Date.now() + 60_000;
 
-// ===== NIST offset =====
 let nistOffsetMs = 0;
-let deploymentStartNistMs = null; // legacy tracking only
+let deploymentStartNistMs = null;
 let hasNistSync = false;
 
-// ===== Visits Today cache =====
-let visitsDayKeyCache = null;
-let visitsTodayCache = null; // null => LOADING / not ready
-
-// ===== Window anchor for BOTH payout + visits (“day boundary” offset) =====
-// null means “uninitialized” (fresh /meta wipe). We auto-initialize after first successful NIST sync.
 let visitsDayOffsetMs = null;
+let visitsDayKeyCache = null;
+let visitsTodayCache = null;
+
+// ===== Meta docs =====
+const COUNTDOWN_META_DOC = "countdownEndAt";
+const VISITS_OFFSET_META_DOC = "visitsDayOffsetMs";
 
 // ===== Helpers =====
-const getRemainingSeconds = () => {
-  const remainingMs = countdownEndAt - Date.now();
-  return Math.max(0, Math.ceil(remainingMs / 1000));
-};
+const getRemainingSeconds = () =>
+  Math.max(0, Math.ceil((countdownEndAt - Date.now()) / 1000));
 
-const normalizeMsNumber = (v) => {
-  if (typeof v !== "number" || !Number.isFinite(v)) return null;
-  if (v <= 0) return null;
-  return v;
-};
+const normalizeMsNumber = (v) =>
+  typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
 
-const normalizeOffsetMsNumber = (v) => {
-  if (typeof v !== "number" || !Number.isFinite(v)) return null;
-  return ((v % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY;
-};
+const normalizeOffsetMsNumber = (v) =>
+  typeof v === "number" && Number.isFinite(v)
+    ? ((v % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY
+    : null;
 
-// ===== Firestore meta docs =====
-const COUNTDOWN_META_DOC = "countdownEndAt"; // meta/countdownEndAt { value: <ms> }
-const VISITS_OFFSET_META_DOC = "visitsDayOffsetMs"; // meta/visitsDayOffsetMs { value: <ms> }
-
-// legacy (not used for payout anymore, but kept so you can see NIST start)
-const loadDeploymentStart = async () => {
-  if (!db) return;
-  const doc = await db.collection("meta").doc("deploymentStartNistMs").get();
-  if (doc.exists) deploymentStartNistMs = doc.data().value;
-};
-
-const persistDeploymentStart = async (value) => {
-  if (!db) return;
-  await db.collection("meta").doc("deploymentStartNistMs").set({ value }, { merge: true });
-};
-
+// ===== Load / Persist =====
 const loadCountdownEndAt = async () => {
   if (!db) return;
-
-  const ref = db.collection("meta").doc(COUNTDOWN_META_DOC);
-  const snap = await ref.get();
-
+  const snap = await db.collection("meta").doc(COUNTDOWN_META_DOC).get();
   const stored = snap.exists ? normalizeMsNumber(snap.data()?.value) : null;
-  if (stored) {
-    countdownEndAt = stored;
-    return;
-  }
-
-  countdownEndAt = Date.now() + 60_000;
-  await ref.set({ value: countdownEndAt }, { merge: true });
+  if (stored) countdownEndAt = stored;
 };
 
 const persistCountdownEndAt = async () => {
   if (!db) return;
-  await db.collection("meta").doc(COUNTDOWN_META_DOC).set({ value: countdownEndAt }, { merge: true });
+  await db.collection("meta").doc(COUNTDOWN_META_DOC)
+    .set({ value: countdownEndAt }, { merge: true });
 };
 
 const loadVisitsDayOffsetMs = async () => {
   if (!db) return;
-
-  const ref = db.collection("meta").doc(VISITS_OFFSET_META_DOC);
-  const snap = await ref.get();
-
-  if (!snap.exists) {
-    // Important: missing means fresh start needed
-    visitsDayOffsetMs = null;
-    return;
-  }
-
-  visitsDayOffsetMs = normalizeOffsetMsNumber(snap.data()?.value);
+  const snap = await db.collection("meta").doc(VISITS_OFFSET_META_DOC).get();
+  visitsDayOffsetMs = snap.exists
+    ? normalizeOffsetMsNumber(snap.data()?.value)
+    : null;
 };
 
 const persistVisitsDayOffsetMs = async () => {
-  if (!db) return;
-  if (visitsDayOffsetMs === null) return;
-
-  await db
-    .collection("meta")
-    .doc(VISITS_OFFSET_META_DOC)
-    .set({ value: normalizeOffsetMsNumber(visitsDayOffsetMs) }, { merge: true });
+  if (!db || visitsDayOffsetMs === null) return;
+  await db.collection("meta").doc(VISITS_OFFSET_META_DOC)
+    .set({ value: visitsDayOffsetMs }, { merge: true });
 };
 
-// ===== NIST parsing/fetch =====
-const normalizeNistMs = (rawValue) => {
-  if (!rawValue) return null;
-  const trimmed = String(rawValue).trim();
-  if (!/^\d{10,}$/.test(trimmed)) return null;
-  if (trimmed.length === 10) return Number(trimmed) * 1000;
-  if (trimmed.length > 13) return Number(trimmed.slice(0, 13));
-  return Number(trimmed);
+// ===== NEW payout persistence =====
+const loadPayoutCycle = async () => {
+  if (!db) return;
+  const snap = await db.collection("meta").doc(PAYOUT_CYCLE_DOC).get();
+  const v = snap.exists ? snap.data()?.value : null;
+  if (typeof v === "number" && v >= 1)
+    payoutCycleIndex = Math.min(40, Math.floor(v));
+};
+
+const persistPayoutCycle = async () => {
+  if (!db) return;
+  await db.collection("meta").doc(PAYOUT_CYCLE_DOC)
+    .set({ value: payoutCycleIndex }, { merge: true });
+};
+
+// ===== NIST =====
+const normalizeNistMs = (raw) => {
+  if (!raw) return null;
+  const t = String(raw).trim();
+  if (!/^\d{10,}$/.test(t)) return null;
+  if (t.length === 10) return Number(t) * 1000;
+  if (t.length > 13) return Number(t.slice(0, 13));
+  return Number(t);
 };
 
 const parseNistDaytime = (payload) => {
-  const match = payload.match(/(\d{2})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
-  if (!match) return null;
-  const [, yy, mm, dd, hh, min, ss] = match;
-  const year = 2000 + Number(yy);
-  return Date.UTC(year, Number(mm) - 1, Number(dd), Number(hh), Number(min), Number(ss));
-};
-
-const fetchNistDaytimeTimestamp = async () => {
-  const errors = [];
-
-  for (const host of NIST_DAYTIME_SERVERS) {
-    try {
-      const result = await new Promise((resolve, reject) => {
-        const socket = net.createConnection({ host, port: 13 });
-
-        const timeoutId = setTimeout(() => {
-          socket.destroy();
-          reject(new Error("timeout"));
-        }, 5000);
-
-        let buffer = "";
-
-        socket.on("data", (chunk) => {
-          buffer += chunk.toString("utf8");
-          if (buffer.includes("\n")) socket.end();
-        });
-
-        socket.on("end", () => {
-          clearTimeout(timeoutId);
-          resolve(buffer.trim());
-        });
-
-        socket.on("error", (error) => {
-          clearTimeout(timeoutId);
-          reject(error);
-        });
-      });
-
-      const nistMs = parseNistDaytime(result);
-      if (!nistMs) {
-        errors.push(`${host} parse`);
-        continue;
-      }
-      return nistMs;
-    } catch (error) {
-      errors.push(`${host} ${error?.message || error}`);
-    }
-  }
-
-  throw new Error(`NIST daytime failed: ${errors.join("; ")}`);
+  const m = payload.match(/(\d{2})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, yy, mm, dd, hh, mi, ss] = m;
+  return Date.UTC(2000 + Number(yy), Number(mm)-1, Number(dd), Number(hh), Number(mi), Number(ss));
 };
 
 const fetchNistTimestamp = async () => {
-  const errors = [];
-
-  for (const baseUrl of NIST_URLS) {
-    try {
-      const response = await fetch(`${baseUrl}?cacheBust=${Date.now()}`, {
-        headers: {
-          "Cache-Control": "no-cache",
-          "User-Agent": "Mozilla/5.0"
-        }
-      });
-
-      if (!response.ok) {
-        errors.push(`${baseUrl} ${response.status}`);
-        continue;
-      }
-
-      const text = await response.text();
-      const match = text.match(/"time"\s*:\s*"?(\d{10,})"?/);
-      const nistMs = normalizeNistMs(match ? match[1] : null);
-
-      if (!nistMs) {
-        errors.push(`${baseUrl} parse`);
-        continue;
-      }
-
-      return nistMs;
-    } catch (error) {
-      errors.push(`${baseUrl} ${error?.message || error}`);
-    }
+  for (const base of NIST_URLS) {
+    const r = await fetch(`${base}?cacheBust=${Date.now()}`, { headers:{ "Cache-Control":"no-cache"}});
+    if (!r.ok) continue;
+    const t = await r.text();
+    const m = t.match(/"time"\s*:\s*"?(\d{10,})"?/);
+    const ms = normalizeNistMs(m ? m[1] : null);
+    if (ms) return ms;
   }
-
-  try {
-    return await fetchNistDaytimeTimestamp();
-  } catch (error) {
-    errors.push(error?.message || error);
+  for (const host of NIST_DAYTIME_SERVERS) {
+    const result = await new Promise((resolve,reject)=>{
+      const socket = net.createConnection({host,port:13});
+      const to = setTimeout(()=>{socket.destroy();reject();},5000);
+      let buf="";
+      socket.on("data",c=>{buf+=c.toString("utf8"); if(buf.includes("\n")) socket.end();});
+      socket.on("end",()=>{clearTimeout(to);resolve(buf.trim());});
+      socket.on("error",()=>{clearTimeout(to);reject();});
+    });
+    const ms = parseNistDaytime(result);
+    if (ms) return ms;
   }
-
-  throw new Error(`NIST fetch failed: ${errors.join("; ")}`);
+  throw new Error("NIST failed");
 };
 
 const getNistNowMs = () => Date.now() + nistOffsetMs;
-
 const isWindowReady = () => hasNistSync && visitsDayOffsetMs !== null;
-
 const getAdjustedNistNowMs = () => getNistNowMs() - (visitsDayOffsetMs ?? 0);
 
-// ===== Window-based payout + visits =====
 const getPayoutRemainingSeconds = () => {
   if (!isWindowReady()) return null;
-
-  const adjustedSeconds = Math.floor(getAdjustedNistNowMs() / 1000);
-  const secondsIntoWindow = ((adjustedSeconds % WINDOW_SECONDS) + WINDOW_SECONDS) % WINDOW_SECONDS;
-
-  const remaining = WINDOW_SECONDS - secondsIntoWindow;
-  return remaining === 0 ? WINDOW_SECONDS : remaining;
+  const s = Math.floor(getAdjustedNistNowMs() / 1000);
+  const into = ((s % WINDOW_SECONDS)+WINDOW_SECONDS)%WINDOW_SECONDS;
+  const rem = WINDOW_SECONDS - into;
+  return rem === 0 ? WINDOW_SECONDS : rem;
 };
 
-const getWindowDayKey = () => {
-  if (!isWindowReady()) return null;
-  // This key is NOT calendar-based once offset is initialized at deploy time.
-  return new Date(getAdjustedNistNowMs()).toISOString().slice(0, 10);
-};
+const getWindowDayKey = () =>
+  isWindowReady()
+    ? new Date(getAdjustedNistNowMs()).toISOString().slice(0,10)
+    : null;
 
-// ===== Visits cache =====
-const refreshVisitsTodayCacheIfNeeded = () => {
-  if (!isWindowReady()) {
-    visitsDayKeyCache = null;
-    visitsTodayCache = null;
-    return;
+// ===== NIST sync + payout rollover =====
+const syncNistTime = async () => {
+  const ms = await fetchNistTimestamp();
+  nistOffsetMs = ms - Date.now();
+  hasNistSync = true;
+
+  if (visitsDayOffsetMs === null) {
+    visitsDayOffsetMs = getNistNowMs() % MS_PER_DAY;
+    await persistVisitsDayOffsetMs();
   }
 
-  const dayKey = getWindowDayKey();
-  if (!dayKey) {
-    visitsDayKeyCache = null;
-    visitsTodayCache = null;
-    return;
-  }
+  const key = getWindowDayKey();
 
-  if (visitsDayKeyCache === dayKey && visitsTodayCache !== null) return;
-
-  visitsDayKeyCache = dayKey;
-  visitsTodayCache = 0;
-
-  if (!db) {
-    const set = memoryStore.dailyVisits.get(dayKey);
-    visitsTodayCache = set ? set.size : 0;
-    return;
-  }
-
-  db.collection("dailyVisits")
-    .doc(dayKey)
-    .get()
-    .then((doc) => {
-      if (!doc.exists) {
-        visitsTodayCache = 0;
-        return;
-      }
-      const count = doc.data()?.count;
-      visitsTodayCache = typeof count === "number" ? count : 0;
-    })
-    .catch(() => {});
-};
-
-const markVisitToday = async (clientId) => {
-  if (!isWindowReady()) return null;
-
-  const dayKey = getWindowDayKey();
-  if (!dayKey) return null;
-
-  if (visitsDayKeyCache !== dayKey) {
-    visitsDayKeyCache = dayKey;
-    visitsTodayCache = 0;
-  }
-
-  if (!db) {
-    let set = memoryStore.dailyVisits.get(dayKey);
-    if (!set) {
-      set = new Set();
-      memoryStore.dailyVisits.set(dayKey, set);
+  if (lastWindowKey && key && key !== lastWindowKey) {
+    if (payoutCycleIndex < 40) {
+      payoutCycleIndex++;
+      await persistPayoutCycle();
     }
-    set.add(String(clientId));
-    visitsTodayCache = set.size;
-    return set.size;
   }
 
-  const dailyRef = db.collection("dailyVisits").doc(dayKey);
-  const visitorRef = dailyRef.collection("visitors").doc(String(clientId));
-
-  const newCount = await db.runTransaction(async (transaction) => {
-    const [dailySnap, visitorSnap] = await Promise.all([
-      transaction.get(dailyRef),
-      transaction.get(visitorRef)
-    ]);
-
-    const currentCount =
-      dailySnap.exists && typeof dailySnap.data()?.count === "number" ? dailySnap.data().count : 0;
-
-    if (visitorSnap.exists) return currentCount;
-
-    transaction.set(visitorRef, { seenAt: FieldValue.serverTimestamp() }, { merge: true });
-
-    const nextCount = currentCount + 1;
-
-    transaction.set(
-      dailyRef,
-      {
-        count: nextCount,
-        windowSeconds: WINDOW_SECONDS,
-        visitsDayOffsetMs: visitsDayOffsetMs
-      },
-      { merge: true }
-    );
-
-    return nextCount;
-  });
-
-  visitsTodayCache = typeof newCount === "number" ? newCount : visitsTodayCache;
-  return visitsTodayCache;
+  lastWindowKey = key;
 };
 
-// ===== SSE broadcast =====
+// ===== SSE =====
 const broadcastCountdown = () => {
-  refreshVisitsTodayCacheIfNeeded();
-
   const payload = `data: ${JSON.stringify({
     remaining: getRemainingSeconds(),
     endsAt: countdownEndAt,
     payoutRemaining: getPayoutRemainingSeconds(),
-    nistReady: isWindowReady(),
-    visitsToday: isWindowReady() ? visitsTodayCache : null
+    payoutValue: isWindowReady()
+      ? `$${PAYOUT_TABLE[payoutCycleIndex-1]}`
+      : null
   })}\n\n`;
-
   for (const res of sseClients) res.write(payload);
 };
 
-setInterval(() => {
-  broadcastCountdown();
-}, 1000);
+setInterval(broadcastCountdown,1000);
 
-// ===== NIST sync (auto-initializes window start after meta wipe) =====
-const syncNistTime = async () => {
-  try {
-    const nistMs = await fetchNistTimestamp();
-    nistOffsetMs = nistMs - Date.now();
-    hasNistSync = true;
-
-    // legacy meta tracking
-    if (!deploymentStartNistMs) {
-      deploymentStartNistMs = nistMs;
-      try {
-        await persistDeploymentStart(deploymentStartNistMs);
-      } catch (e) {
-        console.warn("Failed to persist deploymentStartNistMs:", e?.message || e);
-      }
-    }
-
-    // AUTO-INIT WINDOW:
-    // If /meta/visitsDayOffsetMs is missing (null), start the 24h window NOW.
-    if (visitsDayOffsetMs === null) {
-      const now = getNistNowMs();
-      visitsDayOffsetMs = now % MS_PER_DAY;
-
-      try {
-        await persistVisitsDayOffsetMs();
-      } catch (e) {
-        console.warn("Failed to persist visitsDayOffsetMs:", e?.message || e);
-      }
-
-      visitsDayKeyCache = null;
-      visitsTodayCache = 0;
-
-      broadcastCountdown();
-    }
-  } catch (error) {
-    console.warn("NIST sync failed, using local time.", error?.message || error);
-  }
-};
-
-// ===== Clients =====
-const getClientId = async (token) => {
-  if (!db) return memoryStore.clients.get(token) ?? null;
-
-  const doc = await db.collection("clients").doc(token).get();
-  if (!doc.exists) return null;
-  return doc.data().id;
-};
-
-const assignClientId = async (token) => {
-  if (!db) {
-    if (memoryStore.clientCounter >= MAX_CLIENTS) return null;
-    const next = memoryStore.clientCounter + 1;
-    memoryStore.clientCounter = next;
-    memoryStore.clients.set(token, next);
-    memoryStore.clickCounts.set(String(next), 0);
-    return next;
-  }
-
-  const counterRef = db.collection("meta").doc("clientCounter");
-
-  return db.runTransaction(async (transaction) => {
-    const counterSnap = await transaction.get(counterRef);
-    const current = counterSnap.exists ? counterSnap.data().value : 0;
-
-    if (current >= MAX_CLIENTS) return null;
-
-    const next = current + 1;
-    transaction.set(counterRef, { value: next }, { merge: true });
-    transaction.set(db.collection("clients").doc(token), { id: next });
-    transaction.set(db.collection("clickCounts").doc(String(next)), { count: 0 }, { merge: true });
-    return next;
-  });
-};
-
-// ===== API =====
-app.get("/api/me", async (req, res) => {
-  const token = req.cookies[COOKIE_NAME];
-  if (!token) return res.status(200).json({ hasId: false, visitsToday: null });
-
-  const id = await getClientId(token);
-  if (!id) return res.status(200).json({ hasId: false, visitsToday: null });
-
-  const visitsToday = isWindowReady() ? await markVisitToday(id) : null;
-
-  return res.status(200).json({ hasId: true, id, visitsToday });
-});
-
-app.post("/api/consent", async (req, res) => {
-  const token = req.cookies[COOKIE_NAME] || uuidv4();
-
-  const existingId = await getClientId(token);
-  if (existingId) {
-    res.cookie(COOKIE_NAME, token, cookieOptions);
-    return res.status(200).json({ id: existingId });
-  }
-
-  const newId = await assignClientId(token);
-  if (!newId) return res.status(403).json({ error: "MAX_CLIENTS_REACHED" });
-
-  res.cookie(COOKIE_NAME, token, cookieOptions);
-  return res.status(200).json({ id: newId });
-});
-
-app.get("/events", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
+// ===== Routes =====
+app.get("/events",(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  res.setHeader("Connection","keep-alive");
   res.flushHeaders();
-
   sseClients.add(res);
-
-  refreshVisitsTodayCacheIfNeeded();
-
-  res.write(
-    `data: ${JSON.stringify({
-      remaining: getRemainingSeconds(),
-      endsAt: countdownEndAt,
-      payoutRemaining: getPayoutRemainingSeconds(),
-      nistReady: isWindowReady(),
-      visitsToday: isWindowReady() ? visitsTodayCache : null
-    })}\n\n`
-  );
-
-  req.on("close", () => {
-    sseClients.delete(res);
-  });
+  req.on("close",()=>sseClients.delete(res));
 });
 
-app.post("/api/click", async (req, res) => {
-  const token = req.cookies[COOKIE_NAME];
-  if (!token) return res.status(401).json({ error: "NOT_AUTHENTICATED" });
-
-  const id = await getClientId(token);
-  if (!id) return res.status(401).json({ error: "NOT_AUTHENTICATED" });
-
-  const remaining = getRemainingSeconds();
-  if (remaining === 0) return res.status(200).json({ remaining });
-
-  // Reset timer
-  countdownEndAt = Date.now() + 60_000;
-
-  try {
-    await persistCountdownEndAt();
-  } catch (e) {
-    console.warn("Failed to persist countdownEndAt:", e?.message || e);
-  }
-
+app.post("/api/click",async(req,res)=>{
+  if(getRemainingSeconds()===0) return res.json({remaining:0});
+  countdownEndAt = Date.now()+60000;
+  await persistCountdownEndAt();
   broadcastCountdown();
-
-  const timestamp = Date.now();
-  const orderKey = `${timestamp.toString().padStart(13, "0")}_${String(id).padStart(7, "0")}`;
-
-  if (!db) {
-    memoryStore.clickEvents.push({ id, timestamp, orderKey });
-    const currentCount = memoryStore.clickCounts.get(String(id)) ?? 0;
-    memoryStore.clickCounts.set(String(id), currentCount + 1);
-  } else {
-    await db.runTransaction(async (transaction) => {
-      const clickRef = db.collection("clickEvents").doc();
-      transaction.set(clickRef, { id, timestamp, orderKey });
-
-      const countRef = db.collection("clickCounts").doc(String(id));
-      transaction.set(countRef, { count: FieldValue.increment(1) }, { merge: true });
-    });
-  }
-
-  return res.status(200).json({ remaining: getRemainingSeconds() });
+  return res.json({remaining:getRemainingSeconds()});
 });
 
-// ===== Admin reset token =====
-const requireResetToken = (req) => {
-  const token = process.env.RESET_PAYOUT_TOKEN;
-  return token && req.headers["x-reset-token"] === token;
-};
-
-// ===== Admin: reset the 24h window NOW (both Visits Today + payout) =====
-const doResetWindowNow = async () => {
-  if (!hasNistSync) return { ok: false, error: "NIST_NOT_READY" };
-
-  const now = getNistNowMs();
-  visitsDayOffsetMs = now % MS_PER_DAY;
-
-  try {
-    await persistVisitsDayOffsetMs();
-  } catch (e) {
-    console.warn("Failed to persist visitsDayOffsetMs:", e?.message || e);
-  }
-
-  visitsDayKeyCache = null;
-  visitsTodayCache = 0;
-
-  broadcastCountdown();
-
-  return { ok: true, resetAtNistMs: now, newDayKey: getWindowDayKey() };
-};
-
-app.post("/api/visits/reset", async (req, res) => {
-  if (!requireResetToken(req)) return res.status(403).json({ error: "FORBIDDEN" });
-
-  const result = await doResetWindowNow();
-  if (!result.ok) return res.status(400).json({ error: result.error });
-
-  return res.status(200).json({ resetAtNistMs: result.resetAtNistMs, newDayKey: result.newDayKey });
+app.get("*",(req,res)=>{
+  res.sendFile(path.join(__dirname,"public","index.html"));
 });
 
-// Back-compat: payout/reset does the same thing
-app.post("/api/payout/reset", async (req, res) => {
-  if (!requireResetToken(req)) return res.status(403).json({ error: "FORBIDDEN" });
-
-  const result = await doResetWindowNow();
-  if (!result.ok) return res.status(400).json({ error: result.error });
-
-  return res.status(200).json({ resetAtNistMs: result.resetAtNistMs, newDayKey: result.newDayKey });
-});
-
-// ===== SPA fallback =====
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-// ===== Init + Start server =====
+// ===== Init =====
 const initialize = async () => {
-  // Load Firestore-backed values before serving traffic
-  if (db) {
-    await Promise.all([loadDeploymentStart(), loadCountdownEndAt(), loadVisitsDayOffsetMs()]);
-  } else {
-    // In-memory: treat as uninitialized until first successful NIST sync
-    if (visitsDayOffsetMs === null) visitsDayOffsetMs = null;
-  }
+  if (db)
+    await Promise.all([
+      loadCountdownEndAt(),
+      loadVisitsDayOffsetMs(),
+      loadPayoutCycle()
+    ]);
 
-  // NIST sync (will auto-init visitsDayOffsetMs if missing)
   await syncNistTime();
-  setInterval(syncNistTime, NIST_SYNC_INTERVAL_MS);
+  lastWindowKey = getWindowDayKey();
+  setInterval(syncNistTime,NIST_SYNC_INTERVAL_MS);
 
-  // Ensure countdown is persisted if Firestore enabled
-  if (db) {
-    try {
-      await persistCountdownEndAt();
-    } catch {}
-  }
-
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+  app.listen(PORT,()=>console.log(`Server running on ${PORT}`));
 };
 
-initialize().catch((err) => {
-  console.error("Fatal initialize error:", err);
-
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-});
+initialize();
