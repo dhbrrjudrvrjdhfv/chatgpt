@@ -14,7 +14,6 @@ const cookieLimit = document.getElementById("cookie-limit");
 let hasConsent = false;
 
 const payoutLine = document.querySelector(".payout-line");
-const payoutTimer = document.getElementById("payout-timer"); // optional, already defined above
 let currentPayout = "LOADING";
 
 const updatePayoutTimer = (remainingSeconds, isReady, payoutValue) => {
@@ -22,12 +21,12 @@ const updatePayoutTimer = (remainingSeconds, isReady, payoutValue) => {
   if (!isReady) {
     payoutTimer.textContent = "LOADING";
     currentPayout = "LOADING";
-    payoutLine.firstChild.textContent = "Current payout LOADING → Next in ";
+    if (payoutLine?.firstChild) payoutLine.firstChild.textContent = "Current payout LOADING → Next in ";
     return;
   }
   payoutTimer.textContent = formatHms(remainingSeconds);
   if (payoutValue) currentPayout = payoutValue;
-  payoutLine.firstChild.textContent = `Current payout ${currentPayout} → Next in `;
+  if (payoutLine?.firstChild) payoutLine.firstChild.textContent = `Current payout ${currentPayout} → Next in `;
 };
 
 const countdownSeconds = 60;
@@ -79,15 +78,6 @@ const formatHms = (totalSeconds) => {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(
     seconds
   ).padStart(2, "0")}`;
-};
-
-const updatePayoutTimer = (remainingSeconds, isReady) => {
-  if (!payoutTimer) return;
-  if (!isReady) {
-    payoutTimer.textContent = "LOADING";
-    return;
-  }
-  payoutTimer.textContent = formatHms(remainingSeconds);
 };
 
 const updateVisitsToday = (visitsToday, nistReady) => {
@@ -366,7 +356,7 @@ const connectEvents = () => {
     setBackendOnline(true);
 
     lastEndsAt = data.endsAt || 0;
-    updatePayoutTimer(data.payoutRemaining, data.nistReady);
+    updatePayoutTimer(data.payoutRemaining, data.nistReady, data.payoutValue);
     updateVisitsToday(data.visitsToday, data.nistReady);
 
     if (data.remaining > 0) {
