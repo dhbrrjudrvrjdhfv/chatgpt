@@ -35,6 +35,8 @@ let clickBoostEndsAt = 0;
 
 let animationFrame = null;
 let lastEndsAt = 0;
+let serverRemainingAtSync = countdownSeconds;
+let lastSyncPerfNow = 0;
 
 // ===== NEW: Backend/SSE state (freeze ASAP when offline) =====
 let backendOnline = false;
@@ -316,8 +318,12 @@ function render(progress01, tsMs, remainingDisplayInt) {
 }
 
 function getRemainingSecondsFloat() {
+  if (lastSyncPerfNow > 0) {
+    const elapsedSeconds = (performance.now() - lastSyncPerfNow) / 1000;
+    return Math.max(0, serverRemainingAtSync - elapsedSeconds);
+  }
   if (!lastEndsAt) return countdownSeconds;
-  return Math.max(0, (lastEndsAt - Date.now()) / 1000);
+  return Math.max(0, Math.min(countdownSeconds, (lastEndsAt - Date.now()) / 1000));
 }
 
 function renderFrame(ts) {
@@ -356,6 +362,10 @@ const connectEvents = () => {
     setBackendOnline(true);
 
     lastEndsAt = data.endsAt || 0;
+    if (typeof data.remaining === "number" && Number.isFinite(data.remaining)) {
+      serverRemainingAtSync = Math.max(0, Math.min(countdownSeconds, data.remaining));
+      lastSyncPerfNow = performance.now();
+    }
     updatePayoutTimer(data.payoutRemaining, data.nistReady, data.payoutValue);
     updateVisitsToday(data.visitsToday, data.nistReady);
 
