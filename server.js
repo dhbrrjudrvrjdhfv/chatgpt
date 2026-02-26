@@ -353,7 +353,7 @@ const initialize = async () => {
   validatePublicAssets();
 
   // 1) Bind to the port immediately on all interfaces so Render sees an open port.
-  app.listen(PORT, "0.0.0.0", () => console.log(`Server running on ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`Server running on ${PORT}`));
 
   // 2) Run Firestore meta reads in background with a short timeout (won't block startup).
   if (db) {
