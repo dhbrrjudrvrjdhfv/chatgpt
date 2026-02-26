@@ -327,4 +327,15 @@ const initialize = async () => {
   validatePublicAssets();
   if(db) await Promise.all([
     db.collection("meta").doc(COUNTDOWN_META_DOC).get().then(snap=>{if(snap.exists) countdownEndAt=normalizeMsNumber(snap.data()?.value)||countdownEndAt;}),
-    db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then(snap=>{visitsDayOffsetMs = snap.exists?normalizeOffsetMsNumber(s
+// ===== INIT SERVER =====
+const initialize = async () => {
+  validatePublicAssets();
+  if (db) await Promise.all([
+    db.collection(COUNTDOWN_META_DOC).doc("meta").get().then(snap => {
+      if (snap.exists) countdownEndAt = normalizeMsNumber(snap.data()?.value) || countdownEndAt;
+    }),
+    db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then(snap => {
+      visitsDayOffsetMs = snap.exists ? normalizeOffsetMsNumber(snap.data()?.value) : null;
+    })
+  ]);
+};
