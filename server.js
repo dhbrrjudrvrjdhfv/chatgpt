@@ -325,17 +325,26 @@ const syncNistTime = async () => {
 // ===== INIT SERVER =====
 const initialize = async () => {
   validatePublicAssets();
-  if(db) await Promise.all([
-    db.collection("meta").doc(COUNTDOWN_META_DOC).get().then(snap=>{if(snap.exists) countdownEndAt=normalizeMsNumber(snap.data()?.value)||countdownEndAt;}),
-// ===== INIT SERVER =====
-const initialize = async () => {
-  validatePublicAssets();
-  if (db) await Promise.all([
-    db.collection(COUNTDOWN_META_DOC).doc("meta").get().then(snap => {
-      if (snap.exists) countdownEndAt = normalizeMsNumber(snap.data()?.value) || countdownEndAt;
-    }),
-    db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then(snap => {
-      visitsDayOffsetMs = snap.exists ? normalizeOffsetMsNumber(snap.data()?.value) : null;
-    })
-  ]);
+
+  if (db) {
+    await Promise.all([
+      db.collection("meta").doc(COUNTDOWN_META_DOC).get().then(snap => {
+        if (snap.exists) countdownEndAt = normalizeMsNumber(snap.data()?.value) || countdownEndAt;
+      }),
+      db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then(snap => {
+        visitsDayOffsetMs = snap.exists ? normalizeOffsetMsNumber(snap.data()?.value) : null;
+      }),
+      db.collection("meta").doc(PAYOUT_CYCLE_DOC).get().then(snap => {
+        if (snap.exists) {
+          const v = snap.data()?.value;
+          if (typeof v === "number" && v >= 1) payoutCycleIndex = Math.min(40, Math.floor(v));
+        }
+      })
+    ]);
+  }
+
+  await fetchNistTimestamp();
+  lastWindowKey = getWindowDayKey();
+  setInterval(fetchNistTimestamp, NIST_SYNC_INTERVAL_MS);
+  app.listen(PORT, () => console.log(`Server running on ${PORT}`));
 };
