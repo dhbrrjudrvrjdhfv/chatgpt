@@ -322,29 +322,71 @@ const syncNistTime = async () => {
   }
 };
 
-// ===== INIT SERVER =====
+// ===== INIT SERVER (safe for Render: bind immediately, run blocking work in background with timeouts) =====
+const withTimeout = (promise, ms, label) =>
+  new Promise((resolve) => {
+    let finished = false;
+    const timer = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        console.warn(`${label} timed out after ${ms}ms`);
+        resolve(null);
+      }
+    }, ms);
+    promise
+      .then((r) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        resolve(r);
+      })
+      .catch((err) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        console.warn(`${label} failed:`, err?.message || err);
+        resolve(null);
+      });
+  });
+
 const initialize = async () => {
   validatePublicAssets();
 
+  // 1) Bind to the port immediately on all interfaces so Render sees an open port.
+  app.listen(PORT, "0.0.0.0", () => console.log(`Server running on ${PORT}`));
+
+  // 2) Run Firestore meta reads in background with a short timeout (won't block startup).
   if (db) {
-    await Promise.all([
-      db.collection("meta").doc(COUNTDOWN_META_DOC).get().then(snap => {
+    const firestoreInitPromise = Promise.all([
+      db.collection("meta").doc(COUNTDOWN_META_DOC).get().then((snap) => {
         if (snap.exists) countdownEndAt = normalizeMsNumber(snap.data()?.value) || countdownEndAt;
       }),
-      db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then(snap => {
+      db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then((snap) => {
         visitsDayOffsetMs = snap.exists ? normalizeOffsetMsNumber(snap.data()?.value) : null;
       }),
-      db.collection("meta").doc(PAYOUT_CYCLE_DOC).get().then(snap => {
+      db.collection("meta").doc(PAYOUT_CYCLE_DOC).get().then((snap) => {
         if (snap.exists) {
           const v = snap.data()?.value;
           if (typeof v === "number" && v >= 1) payoutCycleIndex = Math.min(40, Math.floor(v));
         }
-      })
+      }),
     ]);
+    // Wait but only up to 3s (adjust if you prefer). If it times out, server is already listening.
+    withTimeout(firestoreInitPromise, 3000, "firestoreInit").then(() => {
+      console.log("firestore meta init completed or timed out");
+    });
   }
 
-  await fetchNistTimestamp();
-  lastWindowKey = getWindowDayKey();
-  setInterval(fetchNistTimestamp, NIST_SYNC_INTERVAL_MS);
-  app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+  // 3) Kick off an initial NIST sync but don't block startup. Use short timeout to avoid long hangs.
+  withTimeout(syncNistTime(), 3000, "initialNistSync")
+    .then(() => {
+      lastWindowKey = getWindowDayKey();
+      console.log("initialNistSync completed or timed out; lastWindowKey =", lastWindowKey);
+    });
+
+  // 4) Schedule periodic NIST sync as before. syncNistTime has its own try/catch.
+  setInterval(() => {
+    // call, but guard so any unexpected rejection is logged (syncNistTime already catches most errors).
+    syncNistTime().catch((e) => console.warn("scheduled nist sync failed", e?.message || e));
+  }, NIST_SYNC_INTERVAL_MS);
 };
