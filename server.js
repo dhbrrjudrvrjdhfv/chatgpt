@@ -390,3 +390,4 @@ app.listen(PORT, "0.0.0.0", () => console.log(`Server running on ${PORT}`));
     syncNistTime().catch((e) => console.warn("scheduled nist sync failed", e?.message || e));
   }, NIST_SYNC_INTERVAL_MS);
 };
+initialize();
