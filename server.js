@@ -1,4 +1,3 @@
-// server.js
 import express from "express";
 import cookieParser from "cookie-parser";
 import { v4 as uuidv4 } from "uuid";
@@ -48,8 +47,10 @@ const PAYOUT_CYCLE_DOC = "payoutCycleIndex";
 // ===== NIST / TIME CONFIG =====
 const NIST_URLS = ["https://time.gov/actualtime.cgi","https://time.nist.gov/actualtime.cgi"];
 const NIST_DAYTIME_SERVERS = ["time.nist.gov","time-a.nist.gov","time-b.nist.gov","time-a-b.nist.gov","time-b-b.nist.gov"];
-const NIST_SYNC_INTERVAL_MS = 5 * 60 * 1000;
-const WINDOW_SECONDS = 86400;
+
+// Environment-variable override for Render
+const NIST_SYNC_INTERVAL_MS = Number(process.env.NIST_SYNC_INTERVAL_MS) > 0 ? Number(process.env.NIST_SYNC_INTERVAL_MS) : 5 * 60 * 1000;
+const WINDOW_SECONDS = Number(process.env.PAYOUT_WINDOW_SECONDS) > 0 ? Number(process.env.PAYOUT_WINDOW_SECONDS) : 86400;
 const MS_PER_DAY = 86400000;
 
 // ===== FIRESTORE / MEMORY =====
@@ -89,7 +90,6 @@ const VISITS_OFFSET_META_DOC = "visitsDayOffsetMs";
 // ===== HELPERS =====
 const normalizeMsNumber = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
 const normalizeOffsetMsNumber = (v) => (typeof v === "number" && Number.isFinite(v) ? ((v % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY : null);
-
 const getRemainingSeconds = () => Math.max(0, Math.ceil((countdownEndAt - Date.now()) / 1000));
 
 const normalizeNistMs = (rawValue) => {
@@ -289,7 +289,6 @@ app.post("/api/click", async (req,res)=>{
   return res.json({remaining:getRemainingSeconds()});
 });
 
-
 app.get("/healthz", (_req, res) => {
   res.json({
     ok: true,
@@ -328,23 +327,4 @@ const initialize = async () => {
   validatePublicAssets();
   if(db) await Promise.all([
     db.collection("meta").doc(COUNTDOWN_META_DOC).get().then(snap=>{if(snap.exists) countdownEndAt=normalizeMsNumber(snap.data()?.value)||countdownEndAt;}),
-    db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then(snap=>{visitsDayOffsetMs = snap.exists?normalizeOffsetMsNumber(snap.data()?.value):null;}),
-    db.collection("meta").doc(PAYOUT_CYCLE_DOC).get().then(snap=>{if(snap.exists){ const v = snap.data()?.value; if(typeof v==="number"&&v>=1) payoutCycleIndex=Math.min(40,Math.floor(v)); }})
-  ]);
-  await syncNistTime();
-  lastWindowKey = getWindowDayKey();
-  setInterval(syncNistTime,NIST_SYNC_INTERVAL_MS);
-  app.listen(PORT,()=>console.log(`Server running on ${PORT}`));
-};
-
-initialize();
-
-/*
-POTENTIAL SHORTCOMINGS / PROBLEMS:
-1. SSE clients: if many clients connect, memory use grows unbounded.
-2. Firestore transactions: high concurrency on clickEvents and dailyVisits could hit contention limits.
-3. Payout rollover: if server restarts mid-window, payoutCycleIndex may mismatch with prior cycle unless Firestore writes succeed.
-4. NIST sync fallback: daytime TCP fallback is slow; if both HTTP and TCP fail, window initialization may be delayed.
-5. Cookie-based authentication: no expiration handling; persistent cookies may accumulate invalid tokens.
-6. No logging on failed Firestore writes for clicks or visits (warnings may be silent).
-*/
+    db.collection("meta").doc(VISITS_OFFSET_META_DOC).get().then(snap=>{visitsDayOffsetMs = snap.exists?normalizeOffsetMsNumber(s
